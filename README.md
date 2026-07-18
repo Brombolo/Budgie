@@ -1,21 +1,44 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Budgie 🦜 - Gestione Finanze Personali
 
-# Run and deploy your AI Studio app
+Budgie è un'applicazione Android moderna e intuitiva progettata per aiutarti a gestire le tue finanze personali in modo semplice ed efficace. Con un'interfaccia curata basata su Jetpack Compose, Budgie ti permette di tenere traccia di ogni centesimo.
 
-This contains everything you need to run your app locally.
+## 🚀 Caratteristiche Principali
 
-View your app in AI Studio: https://ai.studio/apps/0f3757eb-61e5-4514-b5cb-19a9be9c1304
+- **Dashboard Panoramica**: Visualizza subito il tuo saldo totale e le ultime attività.
+- **Gestione Conti**: Crea e gestisci diversi conti (Contanti, Banca, Carte) per una visione granulare.
+- **Cronologia Transazioni**: Un registro dettagliato di tutte le tue entrate e uscite.
+- **Statistiche e Report**: Grafici chiari per capire dove spendi i tuoi soldi.
+- **Pianificazione Budget**: Imposta limiti di spesa per categoria per non superare mai il tuo tetto mensile.
+- **Obiettivi di Risparmio**: Risparmia per i tuoi sogni impostando obiettivi specifici.
+- **Pianificazione Pagamenti**: Gestisci le transazioni ricorrenti e pianifica il futuro.
+- **Categorie Personalizzabili**: Organizza le tue spese con icone e colori.
+- **Esportazione Dati**: Esporta i tuoi dati per backup o analisi esterne.
+- **Tema Scuro/Chiaro**: Supporto nativo per la modalità scura.
+- **Notifiche**: Ricevi avvisi importanti sulla gestione del tuo wallet.
 
-## Run Locally
+## 🛠️ Requisiti
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+- **Android**: 8.0 (API 24) o superiore.
+- **Sviluppo**: Android Studio Jellyfish o superiore.
 
+## 📦 Installazione
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+Per provare l'app, puoi scaricare l'APK pre-compilato:
+[Budgie_v0.9.apk](./Budgie_v0.9.apk)
+
+O compilarla da solo:
+1. Clona il repository.
+2. Apri il progetto in **Android Studio**.
+3. Assicurati di avere un file `.env` con le configurazioni necessarie (vedi `.env.example`).
+4. Premi **Run**.
+
+## 🏗️ Architettura
+
+L'app segue i moderni pattern di sviluppo Android:
+- **Jetpack Compose** per la UI.
+- **ViewModel** e **StateFlow** per la gestione dello stato.
+- **Room Database** per la persistenza locale (data layer).
+- **Material 3** per il design system.
+
+---
+Sviluppato con ❤️ per una migliore gestione finanziaria.
