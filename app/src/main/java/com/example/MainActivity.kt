@@ -2,6 +2,7 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -79,6 +80,14 @@ fun MainAppContainer(
         val notifications by viewModel.notifications.collectAsStateWithLifecycle()
         var showNotificationDialog by remember { mutableStateOf(false) }
         var showingHistoryMode by remember { mutableStateOf(false) }
+
+        BackHandler(enabled = currentScreen != BudgieScreen.HOME) {
+            if (drawerState.isOpen) {
+                coroutineScope.launch { drawerState.close() }
+            } else {
+                currentScreen = BudgieScreen.HOME
+            }
+        }
 
         // Module enablement checks
         val budgetOn by viewModel.budgetModuleEnabled.collectAsStateWithLifecycle()

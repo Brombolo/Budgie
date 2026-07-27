@@ -1,50 +1,28 @@
-# Android Studio / IntelliJ
+# Android & Gradle
 *.iml
 .gradle
 .kotlin
 /local.properties
-/.idea/
-.DS_Store
+local.properties
 /build
+/*/build
+/.build-outputs
 /captures
 .externalNativeBuild
 .cxx
-local.properties
-
-# Built APKs
-*.apk
-*.ap_
 *.aab
 
-# Files for the ART/Dalvik VM
-*.dex
+# APK files - ignore build APKs but allow committed APKs in /apk/
+*.apk
+!/apk/*.apk
 
-# Java class files
-*.class
+# IDE & Editor files
+/.idea
+.idea/
+.DS_Store
 
-# Generated files
-bin/
-gen/
-
-# Log files
-*.log
-
-# Android Studio Navigation editor temp files
-.navigation/
-
-# Android Studio captures
-captures/
-
-# Keystore files
-*.jks
-*.keystore
-
-# Google Services
-google-services.json
-
-# Secrets
+# Secrets & Environment Variables
 .env
-!.env.example
+debug.keystore
+debug.keystore.base64
 
-# OS files
-Thumbs.db

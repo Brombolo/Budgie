@@ -2247,13 +2247,29 @@ fun BudgieMascot(
 private val euroFormat = DecimalFormat("€#,##0.00")
 fun Double.formatEuro(): String = euroFormat.format(this)
 
-fun formatTimestamp(timestamp: Long): String {
-    val sdf = SimpleDateFormat("dd MMM, HH:mm", Locale.ITALIAN)
+fun formatTimestamp(timestamp: Long, language: String = "Italiano"): String {
+    val locale = when (language) {
+        "English" -> Locale.ENGLISH
+        "Español" -> Locale("es")
+        "Català" -> Locale("ca")
+        "Français" -> Locale.FRENCH
+        "Deutsch" -> Locale.GERMAN
+        else -> Locale.ITALIAN
+    }
+    val sdf = SimpleDateFormat("dd MMM, HH:mm", locale)
     return sdf.format(Date(timestamp))
 }
 
-fun formatFullDateTime(timestamp: Long): String {
-    val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALIAN)
+fun formatFullDateTime(timestamp: Long, language: String = "Italiano"): String {
+    val locale = when (language) {
+        "English" -> Locale.ENGLISH
+        "Español" -> Locale("es")
+        "Català" -> Locale("ca")
+        "Français" -> Locale.FRENCH
+        "Deutsch" -> Locale.GERMAN
+        else -> Locale.ITALIAN
+    }
+    val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", locale)
     return sdf.format(Date(timestamp))
 }
 
@@ -2615,7 +2631,7 @@ fun DashboardScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            val amountVal = quickAddAmount.toDoubleOrNull() ?: 0.0
+                            val amountVal = quickAddAmount.replace(',', '.').toDoubleOrNull() ?: 0.0
                             if (amountVal > 0) {
                                 val activeAccountId = selectedAccountForQuickAdd?.id ?: accounts.firstOrNull()?.id ?: 1
                                 viewModel.addTransaction(
@@ -3206,32 +3222,27 @@ fun TransactionItemRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (hasNote) {
-                        Text(
-                            text = if (destAccName != null) {
-                                "${"Da".t(language)} $sourceAccName ${"a".t(language)} $destAccName • ${"Giroconto".t(language)}"
-                            } else {
-                                sourceAccName
-                            },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                        Text(
-                            text = formatFullDateTime(tx.timestamp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.outline
-                        )
+
+                    val accountText = if (destAccName != null) {
+                        "${"Da".t(language)} $sourceAccName ${"a".t(language)} $destAccName"
                     } else {
-                        Text(
-                            text = if (destAccName != null) {
-                                "${"Da".t(language)} $sourceAccName ${"a".t(language)} $destAccName • ${"Giroconto".t(language)}"
-                            } else {
-                                "$sourceAccName • ${formatFullDateTime(tx.timestamp)}"
-                            },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.outline
-                        )
+                        sourceAccName
                     }
+
+                    Text(
+                        text = accountText,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = formatFullDateTime(tx.timestamp, language),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 
@@ -3965,8 +3976,16 @@ fun ReportsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Calculations
-                val sdfDays = SimpleDateFormat("dd/MM", Locale.getDefault())
-                val sdfMonths = SimpleDateFormat("MMM", Locale.getDefault())
+                val locale = when (language) {
+                    "English" -> Locale.ENGLISH
+                    "Español" -> Locale("es")
+                    "Català" -> Locale("ca")
+                    "Français" -> Locale.FRENCH
+                    "Deutsch" -> Locale.GERMAN
+                    else -> Locale.ITALIAN
+                }
+                val sdfDays = remember(locale) { SimpleDateFormat("dd/MM", locale) }
+                val sdfMonths = remember(locale) { SimpleDateFormat("MMM", locale) }
 
                 val matchesCategory = { transactionCategoryId: Int? ->
                     if (selectedCategoryFilter == null) {
@@ -5988,7 +6007,30 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Lingua".t(language), fontWeight = FontWeight.Bold)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (language == "Català") {
+                            Image(
+                                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.img_flag_catalonia),
+                                contentDescription = "Catalonia Flag",
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        } else {
+                            val flag = when (language) {
+                                "Italiano" -> "🇮🇹"
+                                "English" -> "🇬🇧"
+                                "Español" -> "🇪🇸"
+                                "Français" -> "🇫🇷"
+                                "Deutsch" -> "🇩🇪"
+                                else -> ""
+                            }
+                            if (flag.isNotEmpty()) Text(flag, fontSize = 16.sp)
+                        }
                         Text(language, color = Color.Gray)
                         Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
                     }
@@ -6152,7 +6194,7 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("BUDGIE v2.4.0", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
+            Text("BUDGIE v0.9.1", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
             Text("Progettato per la tua serenità finanziaria", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
         }
     }
@@ -6199,6 +6241,7 @@ fun AddTransactionDialog(
     var selectedTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     val calendar = remember { java.util.Calendar.getInstance() }
     val sdf = remember { java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.ITALIAN) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -6212,9 +6255,20 @@ fun AddTransactionDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { amountStr = it },
+                    onValueChange = { 
+                        amountStr = it 
+                        errorMessage = null
+                    },
                     label = { Text("Importo (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -6365,18 +6419,40 @@ fun AddTransactionDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val amount = amountStr.toDoubleOrNull() ?: 0.0
-                    if (amount > 0.0) {
-                        viewModel.addTransaction(
-                            title = title,
-                            amount = amount,
-                            type = type,
-                            categoryId = selectedSubCategoryId ?: selectedCategoryId ?: categories.filter { it.parentCategoryId == null && it.type == type }.firstOrNull()?.id,
-                            sourceAccountId = sourceAccountId,
-                            destinationAccountId = if (type == "Transfer") destinationAccountId else null,
-                            customTimestamp = selectedTimestamp
-                        )
-                        onDismiss()
+                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    val mainCats = categories.filter { it.parentCategoryId == null && it.type == type }
+                    val effectiveCatId = if (type == "Transfer") null else (selectedSubCategoryId ?: selectedCategoryId ?: mainCats.firstOrNull()?.id)
+                    val effectiveSourceAccountId = if (accounts.any { it.id == sourceAccountId }) sourceAccountId else (accounts.firstOrNull()?.id ?: 0)
+
+                    when {
+                        amount <= 0.0 -> {
+                            errorMessage = "Inserisci un importo valido maggiore di zero.".t(language)
+                        }
+                        effectiveSourceAccountId == 0 -> {
+                            errorMessage = "Nessun conto selezionato. Crea o seleziona un conto.".t(language)
+                        }
+                        type == "Transfer" && destinationAccountId == effectiveSourceAccountId -> {
+                            errorMessage = "Seleziona un conto di destinazione diverso dal conto di origine.".t(language)
+                        }
+                        type != "Transfer" && effectiveCatId == null -> {
+                            errorMessage = "Seleziona una categoria.".t(language)
+                        }
+                        else -> {
+                            try {
+                                viewModel.addTransaction(
+                                    title = title,
+                                    amount = amount,
+                                    type = type,
+                                    categoryId = effectiveCatId,
+                                    sourceAccountId = effectiveSourceAccountId,
+                                    destinationAccountId = if (type == "Transfer") destinationAccountId else null,
+                                    customTimestamp = selectedTimestamp
+                                )
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante il salvataggio: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
                 }
             ) {
@@ -6453,22 +6529,37 @@ fun AddAccountDialog(
     var name by remember { mutableStateOf("") }
     var balanceStr by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("💳") } // Holds the chosen emoji
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Nuovo Conto".t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { 
+                        name = it
+                        errorMessage = null
+                    },
                     label = { Text("Nome Conto".t(language)) },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = balanceStr,
-                    onValueChange = { balanceStr = it },
+                    onValueChange = { 
+                        balanceStr = it
+                        errorMessage = null
+                    },
                     label = { Text("Saldo Iniziale (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -6484,10 +6575,19 @@ fun AddAccountDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val balance = balanceStr.toDoubleOrNull() ?: 0.0
-                    if (name.isNotEmpty()) {
-                        viewModel.addAccount(name, type, balance)
-                        onDismiss()
+                    val balance = balanceStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    when {
+                        name.isBlank() -> {
+                            errorMessage = "Inserisci un nome per il conto.".t(language)
+                        }
+                        else -> {
+                            try {
+                                viewModel.addAccount(name, type, balance)
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante la creazione: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
                 }
             ) {
@@ -6513,6 +6613,7 @@ fun AddCategoryDialog(
     var name by remember { mutableStateOf("") }
     var emoji by remember { mutableStateOf("🍕") }
     var parentId by remember { mutableStateOf<Int?>(null) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val mainCategories = categories.filter { it.parentCategoryId == null && it.type == type }
     val isEmojiValid = isValidSingleEmoji(emoji)
@@ -6522,10 +6623,19 @@ fun AddCategoryDialog(
         title = { Text((if (type == "Expense") "Nuova Categoria Spesa" else "Nuova Categoria Entrata").t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { 
                         name = it
+                        errorMessage = null
                         val suggested = suggestEmoji(it)
                         if (suggested != "🌍" || emoji == "🍕") {
                             emoji = suggested
@@ -6537,7 +6647,10 @@ fun AddCategoryDialog(
 
                 OutlinedTextField(
                     value = emoji,
-                    onValueChange = { emoji = it },
+                    onValueChange = { 
+                        emoji = it
+                        errorMessage = null
+                    },
                     label = { Text("Emoji Icona".t(language)) },
                     isError = !isEmojiValid,
                     supportingText = {
@@ -6564,12 +6677,19 @@ fun AddCategoryDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (name.isNotEmpty() && isEmojiValid) {
-                        viewModel.addCategory(name, emoji, parentId, type)
-                        onDismiss()
+                    when {
+                        name.isBlank() -> errorMessage = "Inserisci un nome per la categoria.".t(language)
+                        !isEmojiValid -> errorMessage = "Inserisci un'emoji valida.".t(language)
+                        else -> {
+                            try {
+                                viewModel.addCategory(name, emoji, parentId, type)
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante la creazione: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
-                },
-                enabled = name.isNotEmpty() && isEmojiValid
+                }
             ) {
                 Text("Aggiungi".t(language))
             }
@@ -6593,6 +6713,7 @@ fun AdjustBudgetDialog(
 
     var selectedCategoryId by remember { mutableStateOf(categories.firstOrNull { it.parentCategoryId == null }?.id ?: 0) }
     var limitStr by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val mainCategories = categories.filter { it.parentCategoryId == null }
 
@@ -6601,6 +6722,14 @@ fun AdjustBudgetDialog(
         title = { Text("Regola Limite Mensile".t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 Text("Seleziona Categoria:".t(language), style = MaterialTheme.typography.labelLarge)
                 BudgieDropdown(
                     label = "Categoria".t(language),
@@ -6618,7 +6747,10 @@ fun AdjustBudgetDialog(
 
                 OutlinedTextField(
                     value = limitStr,
-                    onValueChange = { limitStr = it },
+                    onValueChange = { 
+                        limitStr = it
+                        errorMessage = null
+                    },
                     label = { Text("Limite Mensile (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -6628,10 +6760,18 @@ fun AdjustBudgetDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val limit = limitStr.toDoubleOrNull() ?: 0.0
-                    if (selectedCategoryId > 0 && limit > 0.0) {
-                        viewModel.updateBudgetLimit(selectedCategoryId, limit, "Monthly")
-                        onDismiss()
+                    val limit = limitStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    when {
+                        selectedCategoryId <= 0 -> errorMessage = "Seleziona una categoria.".t(language)
+                        limit <= 0.0 -> errorMessage = "Inserisci un limite mensile valido maggiore di zero.".t(language)
+                        else -> {
+                            try {
+                                viewModel.updateBudgetLimit(selectedCategoryId, limit, "Monthly")
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante il salvataggio: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
                 }
             ) {
@@ -6656,15 +6796,27 @@ fun AddSavingsGoalDialog(
     var targetStr by remember { mutableStateOf("") }
     var deadline by remember { mutableStateOf("") }
     var iconEmoji by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Nuovo Obiettivo".t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { if (it.length <= 22 && !it.contains("\n")) name = it },
+                    onValueChange = { 
+                        if (it.length <= 22 && !it.contains("\n")) name = it
+                        errorMessage = null
+                    },
                     label = { Text("Nome Obiettivo".t(language)) },
                     singleLine = true,
                     maxLines = 1,
@@ -6673,7 +6825,10 @@ fun AddSavingsGoalDialog(
 
                 OutlinedTextField(
                     value = targetStr,
-                    onValueChange = { targetStr = it },
+                    onValueChange = { 
+                        targetStr = it
+                        errorMessage = null
+                    },
                     label = { Text("Cifra Target (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -6706,10 +6861,18 @@ fun AddSavingsGoalDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val target = targetStr.toDoubleOrNull() ?: 0.0
-                    if (name.isNotEmpty() && target > 0.0) {
-                        viewModel.addSavingsGoal(name, target, deadline, if (iconEmoji.isBlank()) null else iconEmoji)
-                        onDismiss()
+                    val target = targetStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    when {
+                        name.isBlank() -> errorMessage = "Inserisci il nome dell'obiettivo.".t(language)
+                        target <= 0.0 -> errorMessage = "Inserisci una cifra target valida maggiore di zero.".t(language)
+                        else -> {
+                            try {
+                                viewModel.addSavingsGoal(name, target, deadline, if (iconEmoji.isBlank()) null else iconEmoji)
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante la creazione: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
                 }
             ) {
@@ -6733,17 +6896,29 @@ fun AccantonaFondiDialog(
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
     var amountStr by remember { mutableStateOf("") }
     var selectedAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: 0) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Accantona Fondi".t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 Text("Preleva fittiziamente del denaro da un tuo conto per metterlo nel Salvadanaio Virtuale.".t(language))
 
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { amountStr = it },
+                    onValueChange = { 
+                        amountStr = it 
+                        errorMessage = null
+                    },
                     label = { Text("Quota da accantonare (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -6765,10 +6940,19 @@ fun AccantonaFondiDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val amount = amountStr.toDoubleOrNull() ?: 0.0
-                    if (amount > 0.0 && selectedAccountId > 0) {
-                        viewModel.addVirtualSaving(amount, selectedAccountId)
-                        onDismiss()
+                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    val activeAccId = if (accounts.any { it.id == selectedAccountId }) selectedAccountId else (accounts.firstOrNull()?.id ?: 0)
+                    when {
+                        amount <= 0.0 -> errorMessage = "Inserisci una quota valida maggiore di zero.".t(language)
+                        activeAccId <= 0 -> errorMessage = "Seleziona un conto valido.".t(language)
+                        else -> {
+                            try {
+                                viewModel.addVirtualSaving(amount, activeAccId)
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante l'accantonamento: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
                 }
             ) {
@@ -6794,6 +6978,7 @@ fun RilasciaFondiDialog(
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
     var amountStr by remember { mutableStateOf("") }
     var selectedAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: 0) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     
     val savedInSelectedAcc = savedForGoalsMap[selectedAccountId] ?: 0.0
     val maxReleaseLimit = minOf(savedInSelectedAcc, unallocatedAmount)
@@ -6803,6 +6988,14 @@ fun RilasciaFondiDialog(
         title = { Text("Rilascia Fondi".t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 Text("Preleva fondi dal Salvadanaio Virtuale per riallinearli come disponibili nel tuo conto.".t(language))
 
                 if (maxReleaseLimit < savedInSelectedAcc) {
@@ -6813,12 +7006,15 @@ fun RilasciaFondiDialog(
                     )
                 }
 
-                val parsedAmount = amountStr.toDoubleOrNull() ?: 0.0
+                val parsedAmount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
                 val isError = parsedAmount > maxReleaseLimit
 
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { amountStr = it },
+                    onValueChange = { 
+                        amountStr = it 
+                        errorMessage = null
+                    },
                     label = { Text("Quota da rilasciare (€) - max".t(language) + " ${maxReleaseLimit.formatEuro()}") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = isError,
@@ -6840,15 +7036,24 @@ fun RilasciaFondiDialog(
             }
         },
         confirmButton = {
-            val amount = amountStr.toDoubleOrNull() ?: 0.0
             Button(
                 onClick = {
-                    if (amount > 0.0 && selectedAccountId > 0 && amount <= maxReleaseLimit) {
-                        viewModel.addVirtualWithdrawal(amount, selectedAccountId)
-                        onDismiss()
+                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    val activeAccId = if (accounts.any { it.id == selectedAccountId }) selectedAccountId else (accounts.firstOrNull()?.id ?: 0)
+                    when {
+                        amount <= 0.0 -> errorMessage = "Inserisci una quota valida maggiore di zero.".t(language)
+                        activeAccId <= 0 -> errorMessage = "Seleziona un conto valido.".t(language)
+                        amount > maxReleaseLimit -> errorMessage = "L'importo supera il limite massimo rilasciabile.".t(language)
+                        else -> {
+                            try {
+                                viewModel.addVirtualWithdrawal(amount, activeAccId)
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante il rilascio: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
-                },
-                enabled = amount > 0.0 && amount <= maxReleaseLimit
+                }
             ) {
                 Text("Rilascia".t(language))
             }
@@ -6870,6 +7075,7 @@ fun AssegnaFondiAObiettivoDialog(
 ) {
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
     var amountStr by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     val remainingTarget = (goal.targetAmount - goal.currentAmount).coerceAtLeast(0.0)
 
     AlertDialog(
@@ -6877,13 +7083,24 @@ fun AssegnaFondiAObiettivoDialog(
         title = { Text("Assegna Fondi a Obiettivo".t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 Text("Destina parte dei risparmi non assegnati del Salvadanaio all'obiettivo:".t(language) + " ${goal.name}")
                 Text("${"Disponibili non assegnati:".t(language)} ${unallocatedAmount.formatEuro()}", fontWeight = FontWeight.Bold)
                 Text("${"Target rimanente:".t(language)} ${remainingTarget.formatEuro()}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
 
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { amountStr = it },
+                    onValueChange = { 
+                        amountStr = it 
+                        errorMessage = null
+                    },
                     label = { Text("Importo da vincolare (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -6902,16 +7119,22 @@ fun AssegnaFondiAObiettivoDialog(
             }
         },
         confirmButton = {
-            val amount = amountStr.toDoubleOrNull() ?: 0.0
-            val isEnabled = amount > 0.0 && amount <= unallocatedAmount
             Button(
                 onClick = {
-                    if (isEnabled) {
-                        viewModel.allocateSavingsToGoal(goal, amount)
-                        onDismiss()
+                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    when {
+                        amount <= 0.0 -> errorMessage = "Inserisci un importo valido maggiore di zero.".t(language)
+                        amount > unallocatedAmount -> errorMessage = "L'importo supera i fondi non assegnati disponibili.".t(language)
+                        else -> {
+                            try {
+                                viewModel.allocateSavingsToGoal(goal, amount)
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante l'assegnazione: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
-                },
-                enabled = isEnabled
+                }
             ) {
                 Text("Assegna".t(language))
             }
@@ -6932,18 +7155,30 @@ fun RimuoviFondiDaObiettivoDialog(
 ) {
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
     var amountStr by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Rimuovi Fondi da Obiettivo".t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 Text("Rilascia parte dei fondi vincolati a questo obiettivo e riportali nello stato non assegnato del Salvadanaio.".t(language))
                 Text("${"Attualmente vincolati:".t(language)} ${goal.currentAmount.formatEuro()}", fontWeight = FontWeight.Bold)
 
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { amountStr = it },
+                    onValueChange = { 
+                        amountStr = it 
+                        errorMessage = null
+                    },
                     label = { Text("Importo da svincolare (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -6961,16 +7196,22 @@ fun RimuoviFondiDaObiettivoDialog(
             }
         },
         confirmButton = {
-            val amount = amountStr.toDoubleOrNull() ?: 0.0
-            val isEnabled = amount > 0.0 && amount <= goal.currentAmount
             Button(
                 onClick = {
-                    if (isEnabled) {
-                        viewModel.deallocateSavingsFromGoal(goal, amount)
-                        onDismiss()
+                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    when {
+                        amount <= 0.0 -> errorMessage = "Inserisci un importo valido maggiore di zero.".t(language)
+                        amount > goal.currentAmount -> errorMessage = "L'importo supera i fondi attualmente vincolati.".t(language)
+                        else -> {
+                            try {
+                                viewModel.deallocateSavingsFromGoal(goal, amount)
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante il rilascio: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
-                },
-                enabled = isEnabled
+                }
             ) {
                 Text("Rimuovi".t(language))
             }
@@ -7322,22 +7563,37 @@ fun EditAccountDialog(
         )
     }
     var isIncluded by remember { mutableStateOf(account.isIncludedInTotal) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Modifica Conto".t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { 
+                        name = it
+                        errorMessage = null
+                    },
                     label = { Text("Nome Conto".t(language)) },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = balanceStr,
-                    onValueChange = { balanceStr = it },
+                    onValueChange = { 
+                        balanceStr = it
+                        errorMessage = null
+                    },
                     label = { Text("Saldo (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -7364,10 +7620,19 @@ fun EditAccountDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val balance = balanceStr.toDoubleOrNull() ?: account.balance
-                    if (name.isNotEmpty()) {
-                        viewModel.updateAccount(account.copy(name = name, type = type, balance = balance, isIncludedInTotal = isIncluded))
-                        onDismiss()
+                    val balance = balanceStr.replace(',', '.').toDoubleOrNull() ?: account.balance
+                    when {
+                        name.isBlank() -> {
+                            errorMessage = "Inserisci un nome per il conto.".t(language)
+                        }
+                        else -> {
+                            try {
+                                viewModel.updateAccount(account.copy(name = name, type = type, balance = balance, isIncludedInTotal = isIncluded))
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante il salvataggio: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
                 }
             ) {
@@ -7413,6 +7678,7 @@ fun EditTransactionDialog(
     // Formatting timestamp
     val sdf = remember { java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.ITALY) }
     var dateStr by remember { mutableStateOf(sdf.format(java.util.Date(transaction.timestamp))) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -7424,9 +7690,20 @@ fun EditTransactionDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { amountStr = it },
+                    onValueChange = { 
+                        amountStr = it 
+                        errorMessage = null
+                    },
                     label = { Text("Importo (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -7501,24 +7778,39 @@ fun EditTransactionDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val amount = amountStr.toDoubleOrNull() ?: transaction.amount
+                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
                     val parsedDate = try {
-                        sdf.parse(dateStr)?.time ?: transaction.timestamp
+                        sdf.parse(dateStr)?.time
                     } catch (e: Exception) {
-                        transaction.timestamp
+                        null
                     }
 
-                    if (amount > 0.0) {
-                        val updatedTx = transaction.copy(
-                            title = title,
-                            amount = amount,
-                            timestamp = parsedDate,
-                            categoryId = selectedCategoryId,
-                            sourceAccountId = selectedSourceAccountId,
-                            destinationAccountId = selectedDestinationAccountId
-                        )
-                        viewModel.updateTransaction(updatedTx, transaction)
-                        onDismiss()
+                    when {
+                        amount <= 0.0 -> {
+                            errorMessage = "Inserisci un importo valido maggiore di zero.".t(language)
+                        }
+                        parsedDate == null -> {
+                            errorMessage = "Formato data non valido. Usa il formato gg/mm/aaaa oo:mm".t(language)
+                        }
+                        transaction.type == "Transfer" && selectedDestinationAccountId == selectedSourceAccountId -> {
+                            errorMessage = "Seleziona un conto di destinazione diverso dal conto di origine.".t(language)
+                        }
+                        else -> {
+                            try {
+                                val updatedTx = transaction.copy(
+                                    title = title,
+                                    amount = amount,
+                                    timestamp = parsedDate,
+                                    categoryId = selectedCategoryId,
+                                    sourceAccountId = selectedSourceAccountId,
+                                    destinationAccountId = selectedDestinationAccountId
+                                )
+                                viewModel.updateTransaction(updatedTx, transaction)
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante il salvataggio: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
                 }
             ) {
@@ -7565,6 +7857,7 @@ fun AddCategoryBudgetDialog(
     var autoRenew by remember { mutableStateOf(true) }
     var isPinnedToHome by remember { mutableStateOf(false) }
     var period by remember { mutableStateOf("Monthly") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -7576,6 +7869,14 @@ fun AddCategoryBudgetDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 Text("Seleziona Categoria:".t(language), style = MaterialTheme.typography.labelLarge)
                 if (primaryCategories.isNotEmpty()) {
                     val selectedCategory = categories.find { it.id == selectedCategoryId } ?: primaryCategories.first()
@@ -7627,7 +7928,10 @@ fun AddCategoryBudgetDialog(
 
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { amountStr = it },
+                    onValueChange = { 
+                        amountStr = it 
+                        errorMessage = null
+                    },
                     label = { Text("Limite di Spesa (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -7673,19 +7977,28 @@ fun AddCategoryBudgetDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val amount = amountStr.toDoubleOrNull() ?: 0.0
-                    if (amount > 0 && selectedCategoryId != null) {
-                        viewModel.addOrUpdateBudget(
-                            categoryId = selectedCategoryId,
-                            subCategoryId = selectedSubCategoryId,
-                            accountId = null,
-                            amountLimit = amount,
-                            period = period,
-                            notifyOnOverflow = notifyOnOverflow,
-                            autoRenew = autoRenew,
-                            isPinnedToHome = isPinnedToHome
-                        )
-                        onDismiss()
+                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    val effectiveCategoryId = selectedCategoryId ?: primaryCategories.firstOrNull()?.id
+                    when {
+                        effectiveCategoryId == null -> errorMessage = "Seleziona una categoria.".t(language)
+                        amount <= 0.0 -> errorMessage = "Inserisci un limite di spesa valido maggiore di zero.".t(language)
+                        else -> {
+                            try {
+                                viewModel.addOrUpdateBudget(
+                                    categoryId = effectiveCategoryId,
+                                    subCategoryId = selectedSubCategoryId,
+                                    accountId = null,
+                                    amountLimit = amount,
+                                    period = period,
+                                    notifyOnOverflow = notifyOnOverflow,
+                                    autoRenew = autoRenew,
+                                    isPinnedToHome = isPinnedToHome
+                                )
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante il salvataggio: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
                 }
             ) {
@@ -7715,6 +8028,7 @@ fun AddTotalBudgetDialog(
     var autoRenew by remember { mutableStateOf(true) }
     var isPinnedToHome by remember { mutableStateOf(false) }
     var period by remember { mutableStateOf("Monthly") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -7726,6 +8040,14 @@ fun AddTotalBudgetDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 Text("Seleziona Ambito:".t(language), style = MaterialTheme.typography.labelLarge)
                 val scopeOptions = listOf(null) + accounts
                 BudgieDropdown(
@@ -7759,7 +8081,10 @@ fun AddTotalBudgetDialog(
 
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { amountStr = it },
+                    onValueChange = { 
+                        amountStr = it 
+                        errorMessage = null
+                    },
                     label = { Text("Limite di Spesa (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -7805,19 +8130,26 @@ fun AddTotalBudgetDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val amount = amountStr.toDoubleOrNull() ?: 0.0
-                    if (amount > 0) {
-                        viewModel.addOrUpdateBudget(
-                            categoryId = null,
-                            subCategoryId = null,
-                            accountId = selectedAccountId,
-                            amountLimit = amount,
-                            period = period,
-                            notifyOnOverflow = notifyOnOverflow,
-                            autoRenew = autoRenew,
-                            isPinnedToHome = isPinnedToHome
-                        )
-                        onDismiss()
+                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    when {
+                        amount <= 0.0 -> errorMessage = "Inserisci un limite di spesa valido maggiore di zero.".t(language)
+                        else -> {
+                            try {
+                                viewModel.addOrUpdateBudget(
+                                    categoryId = null,
+                                    subCategoryId = null,
+                                    accountId = selectedAccountId,
+                                    amountLimit = amount,
+                                    period = period,
+                                    notifyOnOverflow = notifyOnOverflow,
+                                    autoRenew = autoRenew,
+                                    isPinnedToHome = isPinnedToHome
+                                )
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante il salvataggio: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
                 }
             ) {
@@ -7848,6 +8180,7 @@ fun EditBudgetDialog(
     var autoRenew by remember { mutableStateOf(budget.autoRenew) }
     var isPinnedToHome by remember { mutableStateOf(budget.isPinnedToHome) }
     var period by remember { mutableStateOf(budget.period) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     // Category specific
     val parentCategories = categories.filter { it.parentCategoryId == null }
@@ -7867,6 +8200,14 @@ fun EditBudgetDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 // If Category Budget
                 if (budget.categoryId != null) {
                     Text("Categoria".t(language), style = MaterialTheme.typography.labelLarge)
@@ -7930,7 +8271,10 @@ fun EditBudgetDialog(
 
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { amountStr = it },
+                    onValueChange = { 
+                        amountStr = it 
+                        errorMessage = null
+                    },
                     label = { Text("Limite di Spesa (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
@@ -7964,20 +8308,29 @@ fun EditBudgetDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val amount = amountStr.toDoubleOrNull() ?: budget.amountLimit
-                    viewModel.updateBudget(
-                        budget.copy(
-                            categoryId = selectedCategoryId,
-                            subCategoryId = selectedSubCategoryId,
-                            accountId = selectedAccountId,
-                            amountLimit = amount,
-                            period = period,
-                            notifyOnOverflow = notifyOnOverflow,
-                            autoRenew = autoRenew,
-                            isPinnedToHome = isPinnedToHome
-                        )
-                    )
-                    onDismiss()
+                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: budget.amountLimit
+                    when {
+                        amount <= 0.0 -> errorMessage = "Inserisci un limite di spesa valido maggiore di zero.".t(language)
+                        else -> {
+                            try {
+                                viewModel.updateBudget(
+                                    budget.copy(
+                                        categoryId = selectedCategoryId,
+                                        subCategoryId = selectedSubCategoryId,
+                                        accountId = selectedAccountId,
+                                        amountLimit = amount,
+                                        period = period,
+                                        notifyOnOverflow = notifyOnOverflow,
+                                        autoRenew = autoRenew,
+                                        isPinnedToHome = isPinnedToHome
+                                    )
+                                )
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante il salvataggio: ${e.localizedMessage}".t(language)
+                            }
+                        }
+                    }
                 }
             ) {
                 Text("Salva Modifiche".t(language))
@@ -8889,7 +9242,7 @@ fun AddPlannedTransactionDialog(
             } else {
                 Button(
                     onClick = {
-                        val amount = amountStr.toDoubleOrNull() ?: 0.0
+                        val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
                         val interval = frequencyIntervalStr.toIntOrNull() ?: 0
                         
                         if (amount <= 0.0) {

@@ -873,7 +873,7 @@ fun OnboardingWizardScreen(
                             }
                             currentStep++
                         } else {
-                            val bal = accountBalanceStr.toDoubleOrNull() ?: 0.0
+                            val bal = accountBalanceStr.replace(',', '.').toDoubleOrNull() ?: 0.0
                             viewModel.completeOnboarding(
                                 firstAccountName = accountName,
                                 firstAccountBalance = bal,

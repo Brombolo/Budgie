@@ -228,6 +228,14 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
         viewModelScope.launch {
             repository.clearAllUserData()
             repository.seedInitialDataIfEmpty("Italiano")
+            repository.insertAccount(
+                Account(
+                    name = "Conto Principale",
+                    type = "Conto Corrente",
+                    balance = 0.0,
+                    isIncludedInTotal = true
+                )
+            )
             
             // Reset all user customization preferences to default
             prefs.edit().clear().apply()
