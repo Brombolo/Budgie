@@ -3209,10 +3209,23 @@ fun TransactionItemRow(
                 Column {
                     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
                     val hasNote = tx.title.isNotBlank()
+                    val catDisplay = if (cat != null) {
+                        if (cat.parentCategoryId != null) {
+                            val parent = categories.find { it.id == cat.parentCategoryId }
+                            if (parent != null) "${parent.name} > ${cat.name}" else cat.name
+                        } else {
+                            cat.name
+                        }
+                    } else if (tx.type == "Transfer") {
+                        "Giroconto".t(language)
+                    } else {
+                        "Transazione".t(language)
+                    }
+
                     val displayTitle = if (hasNote) {
                         tx.title
                     } else {
-                        cat?.name ?: if (tx.type == "Transfer") "Giroconto".t(language) else "Transazione".t(language)
+                        catDisplay
                     }
 
                     Text(
@@ -3229,8 +3242,14 @@ fun TransactionItemRow(
                         sourceAccName
                     }
 
+                    val subline = if (hasNote && cat != null) {
+                        "$accountText • $catDisplay"
+                    } else {
+                        accountText
+                    }
+
                     Text(
-                        text = accountText,
+                        text = subline,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.outline,
                         maxLines = 1,
@@ -6194,7 +6213,7 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("BUDGIE v0.9.1", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
+            Text("BUDGIE v0.9.5", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
             Text("Progettato per la tua serenità finanziaria", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
         }
     }
@@ -6237,6 +6256,14 @@ fun AddTransactionDialog(
     var selectedSubCategoryId by remember { mutableStateOf<Int?>(null) }
     var sourceAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: 0) }
     var destinationAccountId by remember { mutableStateOf(accounts.getOrNull(1)?.id ?: 0) }
+
+    LaunchedEffect(type, categories) {
+        val mainCats = categories.filter { it.parentCategoryId == null && it.type == type }
+        if (selectedCategoryId == null || !mainCats.any { it.id == selectedCategoryId }) {
+            selectedCategoryId = mainCats.firstOrNull()?.id
+            selectedSubCategoryId = null
+        }
+    }
 
     var selectedTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     val calendar = remember { java.util.Calendar.getInstance() }
@@ -6383,12 +6410,13 @@ fun AddTransactionDialog(
                 // Categoria (Solo per Spesa o Entrata)
                 if (type != "Transfer") {
                     val mainCats = categories.filter { it.parentCategoryId == null && it.type == type }
+                    val currentCatId = selectedCategoryId ?: mainCats.firstOrNull()?.id
                     
                     Text("Categoria".t(language) + ":", style = MaterialTheme.typography.labelLarge)
                     BudgieDropdown(
                         label = "Seleziona Categoria".t(language),
                         options = mainCats,
-                        selectedOption = categories.find { it.id == selectedCategoryId } ?: mainCats.firstOrNull(),
+                        selectedOption = categories.find { it.id == currentCatId } ?: mainCats.firstOrNull(),
                         optionToString = { it?.let { "${it.iconEmoji} ${it.name}" } ?: "Nessuna Categoria".t(language) },
                         onOptionSelected = { cat ->
                             selectedCategoryId = cat?.id
@@ -6396,8 +6424,8 @@ fun AddTransactionDialog(
                         }
                     )
 
-                    if (selectedCategoryId != null) {
-                        val subCats = categories.filter { it.parentCategoryId == selectedCategoryId }
+                    if (currentCatId != null) {
+                        val subCats = categories.filter { it.parentCategoryId == currentCatId }
                         if (subCats.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text("Sottocategoria (Opzionale):".t(language), style = MaterialTheme.typography.labelLarge)
@@ -6795,8 +6823,10 @@ fun AddSavingsGoalDialog(
     var name by remember { mutableStateOf("") }
     var targetStr by remember { mutableStateOf("") }
     var deadline by remember { mutableStateOf("") }
-    var iconEmoji by remember { mutableStateOf("") }
+    var iconEmoji by remember { mutableStateOf("🎯") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val isEmojiValid = isValidSingleEmoji(iconEmoji)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -6843,15 +6873,19 @@ fun AddSavingsGoalDialog(
 
                 OutlinedTextField(
                     value = iconEmoji,
-                    onValueChange = { input ->
-                        if (input.isEmpty()) {
-                            iconEmoji = ""
+                    onValueChange = { 
+                        iconEmoji = it
+                        errorMessage = null
+                    },
+                    label = { Text("Emoji Icona".t(language)) },
+                    isError = !isEmojiValid,
+                    supportingText = {
+                        if (!isEmojiValid) {
+                            Text("Inserisci un singolo carattere emoji valido".t(language), color = MaterialTheme.colorScheme.error)
                         } else {
-                            val codePoint = input.codePointAt(0)
-                            iconEmoji = String(Character.toChars(codePoint))
+                            Text("Carattere emoji valido".t(language))
                         }
                     },
-                    label = { Text("Icona personalizzata (max 1 emoji)".t(language)) },
                     singleLine = true,
                     maxLines = 1,
                     modifier = Modifier.fillMaxWidth()
@@ -6865,16 +6899,18 @@ fun AddSavingsGoalDialog(
                     when {
                         name.isBlank() -> errorMessage = "Inserisci il nome dell'obiettivo.".t(language)
                         target <= 0.0 -> errorMessage = "Inserisci una cifra target valida maggiore di zero.".t(language)
+                        !isEmojiValid -> errorMessage = "Inserisci un'emoji valida.".t(language)
                         else -> {
                             try {
-                                viewModel.addSavingsGoal(name, target, deadline, if (iconEmoji.isBlank()) null else iconEmoji)
+                                viewModel.addSavingsGoal(name, target, deadline, iconEmoji)
                                 onDismiss()
                             } catch (e: Exception) {
                                 errorMessage = "Errore durante la creazione: ${e.localizedMessage}".t(language)
                             }
                         }
                     }
-                }
+                },
+                enabled = name.isNotBlank() && targetStr.isNotBlank() && isEmojiValid
             ) {
                 Text("Salva".t(language))
             }
@@ -7478,15 +7514,6 @@ fun AccountsScreen(
                                     text = acc.name,
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                                 )
-                                Text(
-                                    text = when (acc.type) {
-                                        "Bank" -> "Conto Bancario".t(language)
-                                        "Card" -> "Carta di Credito".t(language)
-                                        else -> "Contanti".t(language)
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.Gray
-                                )
                             }
                         }
 
@@ -7539,7 +7566,8 @@ fun String.toAccountEmoji(): String = when (this) {
     "Bank" -> "🏦"
     "Card" -> "💳"
     "Cash" -> "💵"
-    else -> "💰"
+    "Conto Corrente" -> "🏦"
+    else -> if (this.isNotBlank()) this else "💰"
 }
 
 // --- EDIT ACCOUNT DIALOG ---
@@ -8398,25 +8426,51 @@ fun AddCategorySubcategoryDialog(
     viewModel: WalletViewModel,
     onDismiss: () -> Unit
 ) {
+    val language by viewModel.appLanguage.collectAsStateWithLifecycle()
     var name by remember { mutableStateOf("") }
     var emoji by remember { mutableStateOf("🔹") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val isEmojiValid = isValidSingleEmoji(emoji)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nuova Sottocategoria per ${parentCategory.name}") },
+        title = { Text("${"Nuova Sottocategoria per".t(language)} ${parentCategory.name}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nome Sottocategoria") },
+                    onValueChange = { 
+                        name = it
+                        errorMessage = null
+                    },
+                    label = { Text("Nome Sottocategoria".t(language)) },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = emoji,
-                    onValueChange = { emoji = it },
-                    label = { Text("Emoji") },
+                    onValueChange = { 
+                        emoji = it
+                        errorMessage = null
+                    },
+                    label = { Text("Emoji Icona".t(language)) },
+                    isError = !isEmojiValid,
+                    supportingText = {
+                        if (!isEmojiValid) {
+                            Text("Inserisci un singolo carattere emoji valido".t(language), color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Text("Carattere emoji valido".t(language))
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -8424,18 +8478,27 @@ fun AddCategorySubcategoryDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (name.isNotEmpty()) {
-                        viewModel.addCategory(name, emoji, parentCategory.id, parentCategory.type)
-                        onDismiss()
+                    when {
+                        name.isBlank() -> errorMessage = "Inserisci un nome per la sottocategoria.".t(language)
+                        !isEmojiValid -> errorMessage = "Inserisci un'emoji valida.".t(language)
+                        else -> {
+                            try {
+                                viewModel.addCategory(name, emoji, parentCategory.id, parentCategory.type)
+                                onDismiss()
+                            } catch (e: Exception) {
+                                errorMessage = "Errore durante la creazione: ${e.localizedMessage}".t(language)
+                            }
+                        }
                     }
-                }
+                },
+                enabled = name.isNotBlank() && isEmojiValid
             ) {
-                Text("Crea")
+                Text("Crea".t(language))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Annulla")
+                Text("Annulla".t(language))
             }
         }
     )

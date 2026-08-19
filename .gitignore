@@ -12,9 +12,9 @@ local.properties
 .cxx
 *.aab
 
-# APK files - ignore build APKs but allow committed APKs in /apk/
+# APK & Bundle files
 *.apk
-!/apk/*.apk
+*.aab
 
 # IDE & Editor files
 /.idea

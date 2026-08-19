@@ -475,8 +475,19 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
             }
         }
         
-        val categoryName = if (planned.type != "Transfer" && planned.categoryId != null) {
-            repository.allCategories.first().find { it.id == planned.categoryId }?.name ?: ""
+        val targetCategoryId = planned.subCategoryId ?: planned.categoryId
+        
+        val categoryName = if (planned.type != "Transfer" && targetCategoryId != null) {
+            val allCats = repository.allCategories.first()
+            val catObj = allCats.find { it.id == targetCategoryId }
+            if (catObj != null) {
+                if (catObj.parentCategoryId != null) {
+                    val parentObj = allCats.find { it.id == catObj.parentCategoryId }
+                    if (parentObj != null) "${parentObj.name} > ${catObj.name}" else catObj.name
+                } else {
+                    catObj.name
+                }
+            } else ""
         } else ""
         
         val defaultTitle = if (planned.title.isNotBlank()) {
@@ -493,7 +504,7 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                 amount = planned.amount,
                 type = planned.type,
                 timestamp = timestamp,
-                categoryId = planned.categoryId,
+                categoryId = targetCategoryId,
                 sourceAccountId = planned.sourceAccountId,
                 destinationAccountId = planned.destinationAccountId
             )

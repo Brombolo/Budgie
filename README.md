@@ -39,10 +39,6 @@
 - Android Studio Ladybug (o successivo) / JDK 17+
 - Android SDK 26+ (Android 8.0+)
 
-### Download APK
-È possibile scaricare l'ultima versione dell'applicazione (v0.9.1) direttamente da qui:
-[Budgie_V0.9.1.apk](./apk/Budgie_V0.9.1.apk)
-
 ### Comandi Gradle
 
 Compilare l'applicazione ed eseguire la verifica dei file:
