@@ -33,9 +33,9 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     val selectedTimeRange = _selectedTimeRange.asStateFlow()
 
     // --- SETTINGS STATE (ITALIAN & ENGLISH SUPPORT) ---
-    val startOfWeek = MutableStateFlow("Lunedì") // "Lunedì", "Domenica"
-    val financialMonthStartDay = MutableStateFlow(1) // 1 to 31
-    val pushNotificationsEnabled = MutableStateFlow(true)
+    val startOfWeek = MutableStateFlow(prefs.getString("start_of_week", "Lunedì") ?: "Lunedì")
+    val financialMonthStartDay = MutableStateFlow(prefs.getInt("financial_month_start_day", 1))
+    val pushNotificationsEnabled = MutableStateFlow(prefs.getBoolean("push_notifications_enabled", true))
     val budgetModuleEnabled = MutableStateFlow(prefs.getBoolean("budget_module_enabled", true))
     val goalsModuleEnabled = MutableStateFlow(prefs.getBoolean("goals_module_enabled", true))
     val reportsModuleEnabled = MutableStateFlow(prefs.getBoolean("reports_module_enabled", true))
@@ -160,6 +160,11 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     fun setFinancialMonthStartDay(day: Int) {
         financialMonthStartDay.value = day
         prefs.edit().putInt("financial_month_start_day", day).apply()
+    }
+
+    fun setPushNotificationsEnabled(enabled: Boolean) {
+        pushNotificationsEnabled.value = enabled
+        prefs.edit().putBoolean("push_notifications_enabled", enabled).apply()
     }
 
     fun setAppLanguage(lang: String) {
@@ -353,7 +358,9 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                                 )
                                 
                                 // Mostra notifica reale di sistema
-                                showSystemNotification(title, msg)
+                                if (pushNotificationsEnabled.value) {
+                                    showSystemNotification(title, msg)
+                                }
                             }
                         }
                     }

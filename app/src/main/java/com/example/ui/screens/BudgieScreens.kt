@@ -3510,6 +3510,8 @@ fun HistoryScreen(
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
 
+    val finMonthDay by viewModel.financialMonthStartDay.collectAsStateWithLifecycle()
+
     var searchQuery by remember { mutableStateOf("") }
     var selectedMonthCalendar by remember { mutableStateOf<java.util.Calendar?>(null) }
 
@@ -3526,37 +3528,19 @@ fun HistoryScreen(
     val monthNameFormatter = remember(locale) { java.text.SimpleDateFormat("MMMM", locale) }
     val monthYearFormatter = remember(locale) { java.text.SimpleDateFormat("MMMM yyyy", locale) }
 
-    // Start limit of previous calendar month
-    val startOfPrevLimit = remember {
-        java.util.Calendar.getInstance().apply {
-            add(java.util.Calendar.MONTH, -1)
-            set(java.util.Calendar.DAY_OF_MONTH, 1)
-            set(java.util.Calendar.HOUR_OF_DAY, 0)
-            set(java.util.Calendar.MINUTE, 0)
-            set(java.util.Calendar.SECOND, 0)
-            set(java.util.Calendar.MILLISECOND, 0)
-        }.timeInMillis
+    // Start limit of previous financial month
+    val startOfPrevLimit = remember(finMonthDay) {
+        val cal = java.util.Calendar.getInstance()
+        cal.add(java.util.Calendar.MONTH, -1)
+        viewModel.getMonthlyPeriodBounds(cal.timeInMillis, finMonthDay).first
     }
 
-    val (startLimit, endLimit) = remember(selectedMonthCalendar) {
+    val (startLimit, endLimit) = remember(selectedMonthCalendar, finMonthDay) {
         if (selectedMonthCalendar == null) {
             Pair(startOfPrevLimit, Long.MAX_VALUE)
         } else {
-            val startOfSelected = (selectedMonthCalendar!!.clone() as java.util.Calendar).apply {
-                set(java.util.Calendar.DAY_OF_MONTH, 1)
-                set(java.util.Calendar.HOUR_OF_DAY, 0)
-                set(java.util.Calendar.MINUTE, 0)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-            }.timeInMillis
-            val endOfSelected = (selectedMonthCalendar!!.clone() as java.util.Calendar).apply {
-                set(java.util.Calendar.DAY_OF_MONTH, getActualMaximum(java.util.Calendar.DAY_OF_MONTH))
-                set(java.util.Calendar.HOUR_OF_DAY, 23)
-                set(java.util.Calendar.MINUTE, 59)
-                set(java.util.Calendar.SECOND, 59)
-                set(java.util.Calendar.MILLISECOND, 999)
-            }.timeInMillis
-            Pair(startOfSelected, endOfSelected)
+            val bounds = viewModel.getMonthlyPeriodBounds(selectedMonthCalendar!!.timeInMillis, finMonthDay)
+            Pair(bounds.first, bounds.second)
         }
     }
 
@@ -3668,17 +3652,17 @@ fun HistoryScreen(
 
         // Info text showing visible date range / active period
         val infoText = if (selectedMonthCalendar == null) {
-            val startOfPrev = java.util.Calendar.getInstance().apply {
-                add(java.util.Calendar.MONTH, -1)
-            }.time
+            val startOfPrev = java.util.Date(startLimit)
             val prevMonthName = monthNameFormatter.format(startOfPrev).replaceFirstChar { it.uppercaseChar() }
+            val dayOfMonth = java.util.Calendar.getInstance().apply { time = startOfPrev }.get(java.util.Calendar.DAY_OF_MONTH)
+            
             when (language) {
-                "English" -> "Showing transactions from $prevMonthName 1st to today"
-                "Español" -> "Mostrando transacciones desde el 1 de $prevMonthName hasta hoy"
-                "Català" -> "Mostrant transaccions des de l'1 de $prevMonthName fins a avui"
-                "Français" -> "Affichage des transactions du 1er $prevMonthName à aujourd'hui"
-                "Deutsch" -> "Transaktionen vom 1. $prevMonthName bis heute anzeigen"
-                else -> "Mostrate transazioni dal 1° $prevMonthName ad oggi"
+                "English" -> "Showing transactions from $prevMonthName ${dayOfMonth}th to today"
+                "Español" -> "Mostrando transacciones desde il $dayOfMonth de $prevMonthName hasta hoy"
+                "Català" -> "Mostrant transaccions des del $dayOfMonth de $prevMonthName fins a avui"
+                "Français" -> "Affichage des transactions du $dayOfMonth $prevMonthName à aujourd'hui"
+                "Deutsch" -> "Transaktionen vom $dayOfMonth. $prevMonthName bis heute anzeigen"
+                else -> "Mostrate transazioni dal $dayOfMonth $prevMonthName ad oggi"
             }
         } else {
             val currentMonthName = monthYearFormatter.format(selectedMonthCalendar!!.time).replaceFirstChar { it.uppercaseChar() }
@@ -6177,7 +6161,7 @@ fun SettingsScreen(
                     Text("Notifiche Push".t(language), fontWeight = FontWeight.Bold)
                     Text("Rimani aggiornato sulle tue spese in tempo reale.".t(language), style = MaterialTheme.typography.labelMedium, color = Color.Gray)
                 }
-                Switch(checked = pushNotif, onCheckedChange = { viewModel.pushNotificationsEnabled.value = it })
+                Switch(checked = pushNotif, onCheckedChange = { viewModel.setPushNotificationsEnabled(it) })
             }
         }
 
