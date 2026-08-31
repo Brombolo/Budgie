@@ -34,7 +34,8 @@ data class Transaction(
     val categoryId: Int? = null,
     val sourceAccountId: Int,
     val destinationAccountId: Int? = null, // Per giroconti o prelievi/depositi
-    val savingsGoalId: Int? = null // Facoltativo, per accumulo obiettivi
+    val savingsGoalId: Int? = null, // Facoltativo, per accumulo obiettivi
+    val isFromPlanned: Boolean = false
 )
 
 @Entity(tableName = "budgets")

@@ -43,6 +43,8 @@ fun OnboardingWizardScreen(
     // State values modified during wizard
     var selectedLanguage by remember { mutableStateOf(language) }
     var selectedTheme by remember { mutableStateOf("Chiaro") }
+    var selectedCurrencyCode by remember { mutableStateOf("EUR") }
+    var selectedCurrencySymbol by remember { mutableStateOf("€") }
     
     // Modules enablement
     var budgetModule by remember { mutableStateOf(true) }
@@ -707,11 +709,98 @@ fun OnboardingWizardScreen(
                         )
                         
                         Spacer(modifier = Modifier.height(12.dp))
+
+                        // Valuta del Conto (Menu a tendina con Euro come primo suggerito)
+                        var expandedCurrencyDropdown by remember { mutableStateOf(false) }
+                        val currentSelectedCurrency = supportedCurrencies.find { it.code == selectedCurrencyCode } ?: supportedCurrencies.first()
+
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedCard(
+                                onClick = { expandedCurrencyDropdown = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("account_currency_dropdown_trigger"),
+                                shape = RoundedCornerShape(4.dp),
+                                colors = CardDefaults.outlinedCardColors(
+                                    containerColor = Color.Transparent
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "Valuta del Conto:".t(languageToUse),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(currentSelectedCurrency.flag, fontSize = 18.sp)
+                                            Text(
+                                                text = "${currentSelectedCurrency.symbol} - ${currentSelectedCurrency.name} (${currentSelectedCurrency.code})",
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = "Dropdown",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = expandedCurrencyDropdown,
+                                onDismissRequest = { expandedCurrencyDropdown = false },
+                                modifier = Modifier
+                                    .fillMaxWidth(0.9f)
+                                    .heightIn(max = 300.dp)
+                            ) {
+                                supportedCurrencies.forEachIndexed { index, curr ->
+                                    val isSelected = selectedCurrencyCode == curr.code
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(curr.flag, fontSize = 18.sp)
+                                                Text(
+                                                    text = if (index == 0) "${curr.symbol} - ${curr.name} (${curr.code}) ★" else "${curr.symbol} - ${curr.name} (${curr.code})",
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            selectedCurrencyCode = curr.code
+                                            selectedCurrencySymbol = curr.symbol
+                                            expandedCurrencyDropdown = false
+                                        },
+                                        modifier = Modifier.testTag("currency_option_${curr.code.lowercase()}")
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
                         
                         OutlinedTextField(
                             value = accountBalanceStr,
                             onValueChange = { accountBalanceStr = it },
-                            label = { Text("Saldo Iniziale (€)".t(languageToUse)) },
+                            label = { Text("${"Saldo Iniziale".t(languageToUse)} ($selectedCurrencySymbol)") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth().testTag("account_balance_input")
@@ -880,6 +969,8 @@ fun OnboardingWizardScreen(
                                 firstAccountType = accountType,
                                 language = selectedLanguage,
                                 theme = selectedTheme,
+                                currencyCodeVal = selectedCurrencyCode,
+                                currencySymbolVal = selectedCurrencySymbol,
                                 weekStart = selectedWeekStart,
                                 monthStart = selectedMonthStart,
                                 budgetEnabled = budgetModule,

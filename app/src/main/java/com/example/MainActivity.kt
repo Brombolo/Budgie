@@ -51,11 +51,14 @@ class MainActivity : ComponentActivity() {
 
             val appTheme by viewModel.appTheme.collectAsStateWithLifecycle()
             val language by viewModel.appLanguage.collectAsStateWithLifecycle()
+            val currencySymbol by viewModel.currencySymbol.collectAsStateWithLifecycle()
 
             BudgieTheme(
                 darkTheme = appTheme == "Scuro"
             ) {
-                MainAppContainer(viewModel = viewModel, language = language)
+                CompositionLocalProvider(LocalCurrencySymbol provides currencySymbol) {
+                    MainAppContainer(viewModel = viewModel, language = language)
+                }
             }
         }
     }

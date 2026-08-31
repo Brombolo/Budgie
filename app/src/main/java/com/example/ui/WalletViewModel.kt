@@ -42,8 +42,10 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     val categoriesModuleEnabled = MutableStateFlow(true)
     val planningModuleEnabled = MutableStateFlow(prefs.getBoolean("planning_module_enabled", true))
     val exportModuleEnabled = MutableStateFlow(prefs.getBoolean("export_module_enabled", true))
-    val appLanguage = MutableStateFlow("Italiano") // "Italiano", "English"
-    val appTheme = MutableStateFlow("Chiaro") // "Chiaro", "Scuro"
+    val appLanguage = MutableStateFlow(prefs.getString("app_language", "Italiano") ?: "Italiano") // "Italiano", "English", "Español", "Català", "Français", "Deutsch"
+    val appTheme = MutableStateFlow(prefs.getString("app_theme", "Chiaro") ?: "Chiaro") // "Chiaro", "Scuro"
+    val currencyCode = MutableStateFlow(prefs.getString("app_currency_code", "EUR") ?: "EUR")
+    val currencySymbol = MutableStateFlow(prefs.getString("app_currency_symbol", "€") ?: "€")
     val notifications = MutableStateFlow<List<InAppNotification>>(emptyList())
     val showBudgieTip = MutableStateFlow(prefs.getBoolean("show_budgie_tip", true))
     val budgetViewPeriod = MutableStateFlow(prefs.getString("budget_view_period", "Monthly") ?: "Monthly")
@@ -170,12 +172,20 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
         prefs.edit().putString("app_theme", theme).apply()
     }
 
+    fun setCurrency(code: String, symbol: String) {
+        currencyCode.value = code
+        currencySymbol.value = symbol
+        prefs.edit().putString("app_currency_code", code).putString("app_currency_symbol", symbol).apply()
+    }
+
     fun completeOnboarding(
         firstAccountName: String,
         firstAccountBalance: Double,
         firstAccountType: String,
         language: String,
         theme: String,
+        currencyCodeVal: String = "EUR",
+        currencySymbolVal: String = "€",
         weekStart: String,
         monthStart: Int,
         budgetEnabled: Boolean,
@@ -201,6 +211,8 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
             val editor = prefs.edit()
             editor.putString("app_language", language)
             editor.putString("app_theme", theme)
+            editor.putString("app_currency_code", currencyCodeVal)
+            editor.putString("app_currency_symbol", currencySymbolVal)
             editor.putString("start_of_week", weekStart)
             editor.putInt("financial_month_start_day", monthStart)
             editor.putBoolean("budget_module_enabled", budgetEnabled)
@@ -213,6 +225,8 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
             
             appLanguage.value = language
             appTheme.value = theme
+            currencyCode.value = currencyCodeVal
+            currencySymbol.value = currencySymbolVal
             startOfWeek.value = weekStart
             financialMonthStartDay.value = monthStart
             budgetModuleEnabled.value = budgetEnabled
@@ -356,6 +370,12 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
             repository.allPlannedTransactions.collect { plannedList ->
                 val now = System.currentTimeMillis()
                 plannedList.forEach { planned ->
+                    // Se una transazione una-tantum (non ricorrente) è già stata eseguita in precedenza o non è attiva, rimuovila automaticamente
+                    if (!planned.isRecurring && (!planned.isActive || (planned.lastExecutedDate != null && planned.lastExecutedDate <= now))) {
+                        repository.deletePlannedTransaction(planned)
+                        return@forEach
+                    }
+
                     if (planned.isActive) {
                         var currentPlanned = planned
                         var tempLastExecuted = planned.lastExecutedDate
@@ -384,14 +404,17 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                                 tempLastExecuted = nextExecution
                                 if (!currentPlanned.isRecurring) {
                                     tempIsActive = false
+                                    // Una volta scaduta/eseguita, la voce programmata singola viene rimossa automaticamente dall'elenco
+                                    repository.deletePlannedTransaction(currentPlanned)
+                                    break
+                                } else {
+                                    val updated = currentPlanned.copy(
+                                        lastExecutedDate = tempLastExecuted,
+                                        isActive = tempIsActive
+                                    )
+                                    repository.updatePlannedTransaction(updated)
+                                    currentPlanned = updated
                                 }
-                                
-                                val updated = currentPlanned.copy(
-                                    lastExecutedDate = tempLastExecuted,
-                                    isActive = tempIsActive
-                                )
-                                repository.updatePlannedTransaction(updated)
-                                currentPlanned = updated
                             } else {
                                 break
                             }
@@ -506,7 +529,8 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                 timestamp = timestamp,
                 categoryId = targetCategoryId,
                 sourceAccountId = planned.sourceAccountId,
-                destinationAccountId = planned.destinationAccountId
+                destinationAccountId = planned.destinationAccountId,
+                isFromPlanned = true
             )
         )
     }
@@ -842,6 +866,13 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
             val existing = currentBudgets.find {
                 it.categoryId == categoryId && it.subCategoryId == subCategoryId && it.accountId == accountId && it.period == period
             }
+            if (isPinnedToHome) {
+                currentBudgets.forEach { b ->
+                    if (b.isPinnedToHome && (existing == null || b.id != existing.id)) {
+                        repository.updateBudget(b.copy(isPinnedToHome = false))
+                    }
+                }
+            }
             if (existing != null) {
                 repository.updateBudget(
                     existing.copy(
@@ -872,6 +903,14 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
 
     fun updateBudget(budget: Budget) {
         viewModelScope.launch {
+            if (budget.isPinnedToHome) {
+                val currentBudgets = budgets.value
+                currentBudgets.forEach { b ->
+                    if (b.isPinnedToHome && b.id != budget.id) {
+                        repository.updateBudget(b.copy(isPinnedToHome = false))
+                    }
+                }
+            }
             repository.updateBudget(budget)
             removeNotificationsForBudget(budget.id)
         }
@@ -879,13 +918,16 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
 
     fun togglePinBudget(budget: Budget) {
         viewModelScope.launch {
-            val currentBudgets = budgets.value
-            currentBudgets.forEach { b ->
-                if (b.isPinnedToHome && b.id != budget.id) {
-                    repository.updateBudget(b.copy(isPinnedToHome = false))
+            val nextPinned = !budget.isPinnedToHome
+            if (nextPinned) {
+                val currentBudgets = budgets.value
+                currentBudgets.forEach { b ->
+                    if (b.isPinnedToHome && b.id != budget.id) {
+                        repository.updateBudget(b.copy(isPinnedToHome = false))
+                    }
                 }
             }
-            repository.updateBudget(budget.copy(isPinnedToHome = !budget.isPinnedToHome))
+            repository.updateBudget(budget.copy(isPinnedToHome = nextPinned))
         }
     }
 

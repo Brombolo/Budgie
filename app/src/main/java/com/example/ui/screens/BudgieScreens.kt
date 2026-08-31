@@ -31,11 +31,16 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.*
@@ -71,9 +76,21 @@ object LocalizedStrings {
         "GENERALE" to "GENERAL",
         "Lingua" to "Language",
         "Tema" to "Theme",
+        "Valuta" to "Currency",
+        "Valuta:" to "Currency:",
+        "Valuta del Conto:" to "Account Currency:",
+        "Tutte le valute..." to "All currencies...",
+        "Valuta dell'applicazione:" to "App currency:",
+        "Seleziona la valuta dell'applicazione:" to "Select the app currency:",
+        "Complessivo" to "Overall",
+        "Tutti i Conti" to "All Accounts",
+        "di" to "of",
+        "Pianificato" to "Scheduled",
         "Chiaro" to "Light",
         "Scuro" to "Dark",
         "Progettato per la tua serenità finanziaria" to "Designed for your financial peace of mind",
+        "Sviluppatore:" to "Developer:",
+        "Licenza:" to "License:",
         "Annulla" to "Cancel",
         "Salva" to "Save",
         "Crea" to "Create",
@@ -475,9 +492,21 @@ object LocalizedStrings {
         "GENERALE" to "GENERAL",
         "Lingua" to "Idioma",
         "Tema" to "Tema",
+        "Valuta" to "Moneda",
+        "Valuta:" to "Moneda:",
+        "Valuta del Conto:" to "Moneda de la cuenta:",
+        "Tutte le valute..." to "Todas las monedas...",
+        "Valuta dell'applicazione:" to "Moneda de la aplicación:",
+        "Seleziona la valuta dell'applicazione:" to "Selecciona la moneda de la aplicación:",
+        "Complessivo" to "General",
+        "Tutti i Conti" to "Todas las cuentas",
+        "di" to "de",
+        "Pianificato" to "Programado",
         "Chiaro" to "Claro",
         "Scuro" to "Oscuro",
         "Progettato per la tua serenità finanziaria" to "Diseñado para tu tranquilidad financiera",
+        "Sviluppatore:" to "Desarrollador:",
+        "Licenza:" to "Licencia:",
         "Annulla" to "Cancelar",
         "Salva" to "Guardar",
         "Crea" to "Crear",
@@ -880,9 +909,21 @@ object LocalizedStrings {
         "GENERALE" to "GENERAL",
         "Lingua" to "Idioma",
         "Tema" to "Tema",
+        "Valuta" to "Moneda",
+        "Valuta:" to "Moneda:",
+        "Valuta del Conto:" to "Moneda del compte:",
+        "Tutte le valute..." to "Totes les monedes...",
+        "Valuta dell'applicazione:" to "Moneda de l'aplicació:",
+        "Seleziona la valuta dell'applicazione:" to "Selecciona la moneda de l'aplicació:",
+        "Complessivo" to "General",
+        "Tutti i Conti" to "Tots els comptes",
+        "di" to "de",
+        "Pianificato" to "Programat",
         "Chiaro" to "Clar",
         "Scuro" to "Fosc",
         "Progettato per la tua serenità finanziaria" to "Dissenyat per a la teva tranquil·litat financera",
+        "Sviluppatore:" to "Desenvolupador:",
+        "Licenza:" to "Llicència:",
         "Annulla" to "Cancel·lar",
         "Salva" to "Desar",
         "Crea" to "Crear",
@@ -1285,9 +1326,21 @@ object LocalizedStrings {
         "GENERALE" to "GÉNÉRAL",
         "Lingua" to "Langue",
         "Tema" to "Thème",
+        "Valuta" to "Devise",
+        "Valuta:" to "Devise :",
+        "Valuta del Conto:" to "Devise du compte :",
+        "Tutte le valute..." to "Toutes les devises...",
+        "Valuta dell'applicazione:" to "Devise de l'application :",
+        "Seleziona la valuta dell'applicazione:" to "Sélectionnez la devise de l'application :",
+        "Complessivo" to "Général",
+        "Tutti i Conti" to "Tous les comptes",
+        "di" to "sur",
+        "Pianificato" to "Planifié",
         "Chiaro" to "Clair",
         "Scuro" to "Sombre",
         "Progettato per la tua serenità finanziaria" to "Conçu pour votre sérénité financière",
+        "Sviluppatore:" to "Développeur :",
+        "Licenza:" to "Licence :",
         "Annulla" to "Annuler",
         "Salva" to "Enregistrer",
         "Crea" to "Créer",
@@ -1692,9 +1745,21 @@ object LocalizedStrings {
         "GENERALE" to "ALLGEMEIN",
         "Lingua" to "Sprache",
         "Tema" to "Design",
+        "Valuta" to "Währung",
+        "Valuta:" to "Währung:",
+        "Valuta del Conto:" to "Kontowährung:",
+        "Tutte le valute..." to "Alle Währungen...",
+        "Valuta dell'applicazione:" to "App-Währung:",
+        "Seleziona la valuta dell'applicazione:" to "Wähle die App-Währung:",
+        "Complessivo" to "Gesamt",
+        "Tutti i Conti" to "Alle Konten",
+        "di" to "von",
+        "Pianificato" to "Geplant",
         "Chiaro" to "Hell",
         "Scuro" to "Dunkel",
         "Progettato per la tua serenità finanziaria" to "Entwickelt für Ihre finanzielle Seelenruhe",
+        "Sviluppatore:" to "Entwickler:",
+        "Licenza:" to "Lizenz:",
         "Annulla" to "Abbrechen",
         "Salva" to "Speichern",
         "Crea" to "Erstellen",
@@ -2244,8 +2309,86 @@ fun BudgieMascot(
 }
 
 // --- UTILS ---
-private val euroFormat = DecimalFormat("€#,##0.00")
-fun Double.formatEuro(): String = euroFormat.format(this)
+val LocalCurrencySymbol = staticCompositionLocalOf { "€" }
+
+data class AppCurrency(
+    val code: String,
+    val symbol: String,
+    val name: String,
+    val flag: String
+)
+
+val supportedCurrencies = listOf(
+    AppCurrency("EUR", "€", "Euro", "🇪🇺"),
+    AppCurrency("USD", "$", "US Dollar", "🇺🇸"),
+    AppCurrency("GBP", "£", "British Pound", "🇬🇧"),
+    AppCurrency("CHF", "CHF", "Swiss Franc", "🇨🇭"),
+    AppCurrency("JPY", "¥", "Japanese Yen", "🇯🇵"),
+    AppCurrency("CAD", "CA$", "Canadian Dollar", "🇨🇦"),
+    AppCurrency("AUD", "AU$", "Australian Dollar", "🇦🇺"),
+    AppCurrency("BRL", "R$", "Brazilian Real", "🇧🇷"),
+    AppCurrency("CNY", "¥", "Chinese Yuan", "🇨🇳"),
+    AppCurrency("INR", "₹", "Indian Rupee", "🇮🇳"),
+    AppCurrency("MXN", "MX$", "Mexican Peso", "🇲🇽"),
+    AppCurrency("PLN", "zł", "Polish Zloty", "🇵🇱"),
+    AppCurrency("SEK", "kr", "Swedish Krona", "🇸🇪"),
+    AppCurrency("NOK", "kr", "Norwegian Krone", "🇳🇴"),
+    AppCurrency("TRY", "₺", "Turkish Lira", "🇹🇷"),
+    AppCurrency("RUB", "₽", "Russian Ruble", "🇷🇺")
+)
+
+fun Double.formatAmount(symbol: String = "€"): String {
+    val symbols = java.text.DecimalFormatSymbols(Locale.ITALY)
+    val df = DecimalFormat("#,##0.00", symbols)
+    val formatted = df.format(this)
+    return if (symbol.length > 1 && !symbol.startsWith("CA") && !symbol.startsWith("AU") && !symbol.startsWith("MX") && !symbol.startsWith("R")) {
+        "$symbol $formatted"
+    } else {
+        "$symbol$formatted"
+    }
+}
+
+@Composable
+fun Double.formatEuro(): String {
+    val symbol = LocalCurrencySymbol.current
+    return formatAmount(symbol)
+}
+
+@Composable
+fun Double.formatEuroAnnotated(
+    prefix: String = "",
+    suffix: String = ""
+): AnnotatedString {
+    val symbol = LocalCurrencySymbol.current
+    val symbols = java.text.DecimalFormatSymbols(Locale.ITALY)
+    val df = DecimalFormat("#,##0.00", symbols)
+    val absVal = kotlin.math.abs(this)
+    val formattedNum = df.format(absVal)
+    val isMultiLetter = symbol.length > 1
+
+    return buildAnnotatedString {
+        if (prefix.isNotEmpty()) {
+            append(prefix)
+        } else if (this@formatEuroAnnotated < 0) {
+            append("-")
+        }
+
+        if (isMultiLetter) {
+            withStyle(SpanStyle(fontSize = 0.48.em, fontWeight = FontWeight.SemiBold)) {
+                append(symbol)
+                append(" ")
+            }
+        } else {
+            append(symbol)
+        }
+
+        append(formattedNum)
+
+        if (suffix.isNotEmpty()) {
+            append(suffix)
+        }
+    }
+}
 
 fun formatTimestamp(timestamp: Long, language: String = "Italiano"): String {
     val locale = when (language) {
@@ -2466,7 +2609,7 @@ fun DashboardScreen(
 
                     // Balance text (disposable)
                     Text(
-                        text = disposableBalance.formatEuro(),
+                        text = disposableBalance.formatEuroAnnotated(),
                         style = MaterialTheme.typography.displayLarge.copy(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = (-1.5).sp
@@ -2478,7 +2621,13 @@ fun DashboardScreen(
                     // Small detail for accantonati if active
                     if (goalsOn && savedAmount > 0.0) {
                         Text(
-                            text = "${"Accantonati:".t(language)} ${savedAmount.formatEuro()} (${"Reale:".t(language)} ${realBalance.formatEuro()})",
+                            text = buildAnnotatedString {
+                                append("${"Accantonati:".t(language)} ")
+                                append(savedAmount.formatEuroAnnotated())
+                                append(" (${"Reale:".t(language)} ")
+                                append(realBalance.formatEuroAnnotated())
+                                append(")")
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline,
                             textAlign = TextAlign.Center
@@ -2792,9 +2941,9 @@ fun DashboardScreen(
             }
             
             val accountName = if (pinnedBudget.accountId == null) {
-                "Tutti i Conti"
+                "Tutti i Conti".t(language)
             } else {
-                accounts.find { it.id == pinnedBudget.accountId }?.name ?: "Conto"
+                accounts.find { it.id == pinnedBudget.accountId }?.name ?: "Conto".t(language)
             }
             
             val cat = if (pinnedBudget.categoryId != null) categories.find { it.id == pinnedBudget.categoryId } else null
@@ -2803,7 +2952,7 @@ fun DashboardScreen(
             val categoryMainName = if (cat != null) {
                 "${cat.iconEmoji} ${cat.name}"
             } else {
-                "🌍 Complessivo ($accountName)".t(language)
+                "🌍 " + "Complessivo".t(language) + " ($accountName)"
             }
             
             val isAllSubcategories = pinnedBudget.categoryId != null && pinnedBudget.subCategoryId == null
@@ -2926,12 +3075,15 @@ fun DashboardScreen(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Text(
-                                    text = spending.formatEuro(),
+                                    text = spending.formatEuroAnnotated(),
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "di ${pinnedBudget.amountLimit.formatEuro()}",
+                                    text = buildAnnotatedString {
+                                        append("${"di".t(language)} ")
+                                        append(pinnedBudget.amountLimit.formatEuroAnnotated())
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                                 )
@@ -3059,14 +3211,22 @@ fun DashboardScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Entrate:".t(language), style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
-                                Text("+${totalInc.formatEuro()}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = Color(0xFF006D43))
+                                Text(
+                                    text = totalInc.formatEuroAnnotated(prefix = "+"),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color(0xFF006D43)
+                                )
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Spese:".t(language), style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
-                                Text("-${totalExp.formatEuro()}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = Color(0xFFBA1A1A))
+                                Text(
+                                    text = totalExp.formatEuroAnnotated(prefix = "-"),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color(0xFFBA1A1A)
+                                )
                             }
                             Divider(modifier = Modifier.padding(vertical = 4.dp))
                             Row(
@@ -3075,7 +3235,7 @@ fun DashboardScreen(
                             ) {
                                 Text("Risparmio netto:".t(language), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
                                 Text(
-                                    text = if (netBalance >= 0) "+${netBalance.formatEuro()}" else netBalance.formatEuro(),
+                                    text = kotlin.math.abs(netBalance).formatEuroAnnotated(prefix = if (netBalance >= 0) "+" else "-"),
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                     color = if (netBalance >= 0) Color(0xFF006D43) else Color(0xFFBA1A1A)
                                 )
@@ -3152,18 +3312,23 @@ fun TransactionItemRow(
 ) {
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
+    val language by viewModel.appLanguage.collectAsStateWithLifecycle()
 
     val cat = categories.find { it.id == tx.categoryId }
+    val parentCat = if (cat?.parentCategoryId != null) categories.find { it.id == cat.parentCategoryId } else null
+
     val emoji = when {
         tx.type == "Transfer" -> "💸"
         cat != null -> cat.iconEmoji
         else -> "💼"
     }
 
-    val sourceAccName = accounts.find { it.id == tx.sourceAccountId }?.name ?: "Conto"
+    val sourceAccName = accounts.find { it.id == tx.sourceAccountId }?.name ?: "Conto".t(language)
     val destAccName = if (tx.type == "Transfer" && tx.destinationAccountId != null) {
         accounts.find { it.id == tx.destinationAccountId }?.name
     } else null
+
+    val isFromScheduled = tx.isFromPlanned || tx.title.startsWith("Pianificato Ricorrente") || tx.title.startsWith("Pianificato Programmato")
 
     var showEditDialog by remember { mutableStateOf(false) }
 
@@ -3171,7 +3336,7 @@ fun TransactionItemRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { showEditDialog = true }
-            .padding(vertical = 2.dp),
+            .padding(vertical = 3.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
@@ -3182,104 +3347,144 @@ fun TransactionItemRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Circular icon
+                // Circular icon with scheduled badge overlay
                 val tintColor = when (tx.type) {
                     "Expense" -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
                     "Income" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                     else -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f)
                 }
                 Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(tintColor),
+                    modifier = Modifier.size(46.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = emoji, fontSize = 24.sp)
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(tintColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = emoji, fontSize = 22.sp)
+                    }
+                    if (isFromScheduled) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .align(Alignment.BottomEnd)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                                .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = "Pianificato".t(language),
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(11.dp)
+                            )
+                        }
+                    }
                 }
 
-                Column {
-                    val language by viewModel.appLanguage.collectAsStateWithLifecycle()
-                    val hasNote = tx.title.isNotBlank()
-                    val catDisplay = if (cat != null) {
-                        if (cat.parentCategoryId != null) {
-                            val parent = categories.find { it.id == cat.parentCategoryId }
-                            if (parent != null) "${parent.name} > ${cat.name}" else cat.name
-                        } else {
-                            cat.name
-                        }
-                    } else if (tx.type == "Transfer") {
-                        "Giroconto".t(language)
-                    } else {
-                        "Transazione".t(language)
-                    }
+                // Text details with clean line wrapping and high legibility
+                Column(
+                    modifier = Modifier.weight(1f, fill = false),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    val rawTitle = tx.title.trim()
+                    val isAutoPlannedTitle = rawTitle.startsWith("Pianificato Ricorrente") || rawTitle.startsWith("Pianificato Programmato")
+                    val hasCustomNote = rawTitle.isNotBlank() && !isAutoPlannedTitle
 
-                    val displayTitle = if (hasNote) {
-                        tx.title
-                    } else {
-                        catDisplay
+                    val mainTitleText = when {
+                        hasCustomNote -> rawTitle
+                        tx.type == "Transfer" -> "Giroconto".t(language)
+                        parentCat != null -> parentCat.name
+                        cat != null -> cat.name
+                        else -> "Transazione".t(language)
                     }
 
                     Text(
-                        text = displayTitle,
+                        text = mainTitleText,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
 
+                    // Subcategory line if applicable
+                    if (!hasCustomNote && parentCat != null && cat != null) {
+                        Text(
+                            text = "> ${cat.name}",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else if (hasCustomNote && cat != null) {
+                        val catDisplay = if (parentCat != null) "${parentCat.name} > ${cat.name}" else cat.name
+                        Text(
+                            text = catDisplay,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Account line
                     val accountText = if (destAccName != null) {
                         "${"Da".t(language)} $sourceAccName ${"a".t(language)} $destAccName"
                     } else {
                         sourceAccName
                     }
 
-                    val subline = if (hasNote && cat != null) {
-                        "$accountText • $catDisplay"
-                    } else {
-                        accountText
-                    }
-
                     Text(
-                        text = subline,
+                        text = accountText,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.outline,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    // Timestamp line
                     Text(
                         text = formatFullDateTime(tx.timestamp, language),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.outline,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.8f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            val (amountText, amountColor) = when (tx.type) {
+            val (amountPrefix, amountColor) = when (tx.type) {
                 "Expense" -> {
-                    "- ${tx.amount.formatEuro()}" to MaterialTheme.colorScheme.error
+                    "- " to MaterialTheme.colorScheme.error
                 }
                 "Income" -> {
-                    "+ ${tx.amount.formatEuro()}" to MaterialTheme.colorScheme.primary
+                    "+ " to MaterialTheme.colorScheme.primary
                 }
                 else -> {
-                    "${tx.amount.formatEuro()}" to MaterialTheme.colorScheme.tertiary
+                    "" to MaterialTheme.colorScheme.tertiary
                 }
             }
             Text(
-                text = amountText,
+                text = tx.amount.formatEuroAnnotated(prefix = amountPrefix),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = amountColor
+                color = amountColor,
+                modifier = Modifier.padding(start = 4.dp),
+                softWrap = false
             )
         }
     }
@@ -6119,6 +6324,84 @@ fun SettingsScreen(
 
                 Divider()
 
+                // Valuta
+                val currencyCode by viewModel.currencyCode.collectAsStateWithLifecycle()
+                val currencySymbol by viewModel.currencySymbol.collectAsStateWithLifecycle()
+                var showCurrencyDialog by remember { mutableStateOf(false) }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showCurrencyDialog = true },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Valuta".t(language), fontWeight = FontWeight.Bold)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val currentCurr = supportedCurrencies.find { it.code == currencyCode }
+                        if (currentCurr != null) {
+                            Text(currentCurr.flag, fontSize = 16.sp)
+                            Text("${currentCurr.symbol} (${currentCurr.code})", color = Color.Gray)
+                        } else {
+                            Text("$currencySymbol ($currencyCode)", color = Color.Gray)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                    }
+                }
+
+                if (showCurrencyDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showCurrencyDialog = false },
+                        title = { Text("Seleziona la valuta dell'applicazione:".t(language)) },
+                        text = {
+                            Column(
+                                modifier = Modifier
+                                    .heightIn(max = 360.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                supportedCurrencies.forEach { curr ->
+                                    val isSelected = currencyCode == curr.code
+                                    TextButton(
+                                        onClick = {
+                                            viewModel.setCurrency(curr.code, curr.symbol)
+                                            showCurrencyDialog = false
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.textButtonColors(
+                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f) else Color.Transparent
+                                        )
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(curr.flag, fontSize = 18.sp)
+                                            Text(
+                                                text = "${curr.symbol} - ${curr.name} (${curr.code})",
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showCurrencyDialog = false }) {
+                                Text("Chiudi".t(language))
+                            }
+                        }
+                    )
+                }
+
+                Divider()
+
                 // Tema
                 Row(
                     modifier = Modifier
@@ -6208,13 +6491,59 @@ fun SettingsScreen(
             )
         }
 
-        // Footer version representation
+        // Footer version representation and developer credits
+        val context = LocalContext.current
         Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text("BUDGIE v0.9.5", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
-            Text("Progettato per la tua serenità finanziaria", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            Text("BUDGIE v0.9.7", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
+            Text("Progettato per la tua serenità finanziaria".t(language), style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "${"Sviluppatore:".t(language)} Brombolo",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://github.com/Brombolo/Budgie")
+                        )
+                        context.startActivity(intent)
+                    }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Code,
+                    contentDescription = "GitHub",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = "https://github.com/Brombolo/Budgie",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.primary,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                )
+            }
+
+            Text(
+                text = "${"Licenza:".t(language)} GNU General Public License v3.0 (GPL-3.0)",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
         }
     }
 }
@@ -7519,7 +7848,7 @@ fun AccountsScreen(
 
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                text = acc.balance.formatEuro(),
+                                text = acc.balance.formatEuroAnnotated(),
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = if (acc.balance >= 0) MaterialTheme.colorScheme.primary else Color(0xFFBA1A1A)
                             )

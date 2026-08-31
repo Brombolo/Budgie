@@ -40,8 +40,8 @@
 - Android SDK 26+ (Android 8.0+)
 
 ### Download APK
-È possibile scaricare l'ultima versione dell'applicazione (v0.9.5) direttamente da qui:
-[Budgie_V0.9.5.apk](./apk/Budgie_V0.9.5.apk)
+È possibile scaricare l'ultima versione dell'applicazione (v0.9.7) direttamente da qui:
+[Budgie_V0.9.7.apk](./apk/Budgie_V0.9.7.apk)
 
 ### Comandi Gradle
 
@@ -56,6 +56,13 @@ gradle testDebugUnitTest
 
 L'APK generato sarà disponibile nel percorso:
 `app/build/outputs/apk/debug/app-debug.apk`
+
+---
+
+## 👨‍💻 Sviluppatore & Repository / Developer
+
+- **Sviluppatore / Developer**: [Brombolo](https://github.com/Brombolo)
+- **Repository Ufficiale / Official Repo**: [https://github.com/Brombolo/Budgie](https://github.com/Brombolo/Budgie)
 
 ---
 
