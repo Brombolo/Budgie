@@ -205,12 +205,37 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
             repository.seedInitialDataIfEmpty(language)
             
             // Insert the first account
-            repository.insertAccount(Account(
+            val accountId = repository.insertAccount(Account(
                 name = firstAccountName,
                 type = firstAccountType,
                 balance = firstAccountBalance,
                 isIncludedInTotal = true
-            ))
+            )).toInt()
+
+            if (firstAccountBalance != 0.0) {
+                // Seed category for "Saldo iniziale"
+                val catName = when (language) {
+                    "English" -> "Initial Balance"
+                    "Español" -> "Saldo inicial"
+                    "Català" -> "Saldo inicial"
+                    "Français" -> "Solde initial"
+                    "Deutsch" -> "Initialer Kontostand"
+                    else -> "Saldo Iniziale"
+                }
+                val newCatId = repository.insertCategory(Category(name = catName, iconEmoji = "🏁", parentCategoryId = null, isCustom = false, type = "Income")).toInt()
+                
+                repository.insertTransaction(
+                    Transaction(
+                        title = catName,
+                        amount = kotlin.math.abs(firstAccountBalance),
+                        type = if (firstAccountBalance >= 0) "Income" else "Expense",
+                        timestamp = System.currentTimeMillis(),
+                        categoryId = newCatId,
+                        sourceAccountId = accountId,
+                        isFromPlanned = false
+                    )
+                )
+            }
             
             // Save settings to SharedPreferences & Flows
             val editor = prefs.edit()
@@ -455,7 +480,31 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     // --- DATABASE WRITERS ---
     fun addAccount(name: String, type: String, initialBalance: Double) {
         viewModelScope.launch {
-            repository.insertAccount(Account(name = name, type = type, balance = initialBalance, isIncludedInTotal = true))
+            val accountId = repository.insertAccount(Account(name = name, type = type, balance = initialBalance, isIncludedInTotal = true)).toInt()
+            
+            if (initialBalance != 0.0) {
+                // Find or create "Saldo iniziale" category
+                val allCats = repository.allCategories.first()
+                val targetCatName = "Saldo iniziale"
+                var saldoInizialeCat = allCats.find { it.name.equals(targetCatName, ignoreCase = true) }
+                
+                if (saldoInizialeCat == null) {
+                    val newCatId = repository.insertCategory(Category(name = targetCatName, iconEmoji = "🏁", parentCategoryId = null, isCustom = false, type = "Income")).toInt()
+                    saldoInizialeCat = Category(id = newCatId, name = targetCatName, iconEmoji = "🏁", parentCategoryId = null, isCustom = false, type = "Income")
+                }
+                
+                repository.insertTransaction(
+                    Transaction(
+                        title = saldoInizialeCat.name,
+                        amount = kotlin.math.abs(initialBalance),
+                        type = if (initialBalance >= 0) "Income" else "Expense",
+                        timestamp = System.currentTimeMillis(),
+                        categoryId = saldoInizialeCat.id,
+                        sourceAccountId = accountId,
+                        isFromPlanned = false
+                    )
+                )
+            }
         }
     }
 
@@ -480,6 +529,12 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     fun deletePlannedTransaction(planned: PlannedTransaction) {
         viewModelScope.launch {
             repository.deletePlannedTransaction(planned)
+        }
+    }
+
+    fun updatePlannedTransaction(planned: PlannedTransaction) {
+        viewModelScope.launch {
+            repository.updatePlannedTransaction(planned)
         }
     }
 
@@ -987,6 +1042,11 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     // Saldo Totale Aggregato dei conti selezionati per l'inclusione
     val aggregateBalance: StateFlow<Double> = accounts.map { list ->
         list.filter { it.isIncludedInTotal }.sumOf { it.balance }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // Fondi Complessivi (tutti i conti, a prescindere dall'inclusione) - Punto 6
+    val totalGlobalBalance: StateFlow<Double> = accounts.map { list ->
+        list.sumOf { it.balance }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     // Mappa dei risparmi virtuali accantonati per ciascun conto (accountId -> importo)

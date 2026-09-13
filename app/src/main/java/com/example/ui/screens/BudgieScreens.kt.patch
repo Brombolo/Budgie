@@ -1,0 +1,339 @@
+// --- SCREEN 2: HISTORY SCREEN ---
+@Composable
+fun HistoryScreen(
+    viewModel: WalletViewModel,
+    modifier: Modifier = Modifier
+) {
+    val filteredTx by viewModel.filteredTransactions.collectAsStateWithLifecycle()
+    val showInternalTransfers by viewModel.showInternalTransfers.collectAsStateWithLifecycle()
+    val language by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val accounts by viewModel.accounts.collectAsStateWithLifecycle()
+
+    val finMonthDay by viewModel.financialMonthStartDay.collectAsStateWithLifecycle()
+
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedMonthCalendar by remember { mutableStateOf<java.util.Calendar?>(null) }
+
+    val locale = remember(language) {
+        when (language) {
+            "English" -> java.util.Locale.ENGLISH
+            "Español" -> java.util.Locale("es")
+            "Català" -> java.util.Locale("ca")
+            "Français" -> java.util.Locale.FRENCH
+            "Deutsch" -> java.util.Locale.GERMAN
+            else -> java.util.Locale.ITALIAN
+        }
+    }
+    val monthNameFormatter = remember(locale) { java.text.SimpleDateFormat("MMMM", locale) }
+    val monthYearFormatter = remember(locale) { java.text.SimpleDateFormat("MMMM yyyy", locale) }
+
+    // Start limit of previous financial month
+    val startOfPrevLimit = remember(finMonthDay, filteredTx) {
+        val cal = java.util.Calendar.getInstance()
+        cal.add(java.util.Calendar.MONTH, -1)
+        viewModel.getMonthlyPeriodBounds(cal.timeInMillis, finMonthDay).first
+    }
+
+    val (startLimit, endLimit) = remember(selectedMonthCalendar, finMonthDay, filteredTx) {
+        if (selectedMonthCalendar == null) {
+            Pair(startOfPrevLimit, Long.MAX_VALUE)
+        } else {
+            val bounds = viewModel.getMonthlyPeriodBounds(selectedMonthCalendar!!.timeInMillis, finMonthDay)
+            Pair(bounds.first, bounds.second)
+        }
+    }
+
+    val txInPeriod = remember(filteredTx, startLimit, endLimit) {
+        filteredTx.filter { it.timestamp in startLimit..endLimit }
+    }
+
+    val finalTx = remember(filteredTx, txInPeriod, searchQuery, categories, accounts) {
+        val baseTxs = if (searchQuery.isNotBlank()) filteredTx else txInPeriod
+
+        if (searchQuery.isBlank()) {
+            baseTxs
+        } else {
+            baseTxs.filter { tx ->
+                val catObj = categories.find { it.id == tx.categoryId }
+                val parentCatObj = catObj?.parentCategoryId?.let { pid -> categories.find { it.id == pid } }
+
+                val categoryName = catObj?.name ?: ""
+                val parentCategoryName = parentCatObj?.name ?: ""
+
+                val sourceAccName = accounts.find { it.id == tx.sourceAccountId }?.name ?: ""
+                val destAccName = tx.destinationAccountId?.let { did -> accounts.find { it.id == did }?.name } ?: ""
+
+                val sdfDay = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ITALIAN)
+                val txDateStr = sdfDay.format(java.util.Date(tx.timestamp))
+                val txDateAlt = txDateStr.replace("/", "-")
+
+                val monthNameIt = java.text.SimpleDateFormat("MMMM", java.util.Locale.ITALIAN).format(java.util.Date(tx.timestamp))
+                val monthNameEn = java.text.SimpleDateFormat("MMMM", java.util.Locale.ENGLISH).format(java.util.Date(tx.timestamp))
+                val yearStr = java.text.SimpleDateFormat("yyyy", java.util.Locale.ITALIAN).format(java.util.Date(tx.timestamp))
+
+                val fullMonthYearIt = "$monthNameIt $yearStr"
+                val fullMonthYearEn = "$monthNameEn $yearStr"
+
+                tx.title.contains(searchQuery, ignoreCase = true) ||
+                categoryName.contains(searchQuery, ignoreCase = true) ||
+                parentCategoryName.contains(searchQuery, ignoreCase = true) ||
+                sourceAccName.contains(searchQuery, ignoreCase = true) ||
+                destAccName.contains(searchQuery, ignoreCase = true) ||
+                txDateStr.contains(searchQuery, ignoreCase = true) ||
+                txDateAlt.contains(searchQuery, ignoreCase = true) ||
+                monthNameIt.contains(searchQuery, ignoreCase = true) ||
+                monthNameEn.contains(searchQuery, ignoreCase = true) ||
+                fullMonthYearIt.contains(searchQuery, ignoreCase = true) ||
+                fullMonthYearEn.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // A. Toggle Interno Giroconti Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Mostra Giroconti Interni".t(language),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        text = "Visualizza movimenti tra i tuoi conti personali.".t(language),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(
+                    checked = showInternalTransfers,
+                    onCheckedChange = { viewModel.toggleInternalTransfers() },
+                    modifier = Modifier.testTag("internal_transfers_switch")
+                )
+            }
+        }
+
+        // B. Search Bar
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("search_bar"),
+            placeholder = { Text("Cerca transazione...".t(language)) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Cancella")
+                    }
+                }
+            },
+            shape = RoundedCornerShape(24.dp),
+            singleLine = true,
+            maxLines = 1
+        )
+
+        // Info text showing visible date range / active period
+        val infoText = if (selectedMonthCalendar == null) {
+            val startOfPrev = java.util.Date(startLimit)
+            val prevMonthName = monthNameFormatter.format(startOfPrev).replaceFirstChar { it.uppercaseChar() }
+            val dayOfMonth = java.util.Calendar.getInstance().apply { time = startOfPrev }.get(java.util.Calendar.DAY_OF_MONTH)
+
+            when (language) {
+                "English" -> "Showing transactions from $prevMonthName ${dayOfMonth}th to today"
+                "Español" -> "Mostrando transacciones desde el $dayOfMonth de $prevMonthName hasta hoy"
+                "Català" -> "Mostrant transaccions des del $dayOfMonth de $prevMonthName fins a avui"
+                "Français" -> "Affichage des transactions du $dayOfMonth $prevMonthName à aujourd'hui"
+                "Deutsch" -> "Transaktionen vom $dayOfMonth. $prevMonthName bis heute anzeigen"
+                else -> "Mostrate transazioni dal $dayOfMonth $prevMonthName ad oggi"
+            }
+        } else {
+            val currentMonthName = monthYearFormatter.format(selectedMonthCalendar!!.time).replaceFirstChar { it.uppercaseChar() }
+            when (language) {
+                "English" -> "Showing transactions of $currentMonthName"
+                "Español" -> "Mostrando transacciones de $currentMonthName"
+                "Català" -> "Mostrant transaccions de $currentMonthName"
+                "Français" -> "Affichage des transactions de $currentMonthName"
+                "Deutsch" -> "Transaktionen von $currentMonthName anzeigen"
+                else -> "Mostrate transazioni di $currentMonthName"
+            }
+        }
+
+        Text(
+            text = infoText,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+
+        // Month pagination navigation
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val prevMonthTarget = remember(selectedMonthCalendar) {
+                java.util.Calendar.getInstance().apply {
+                    if (selectedMonthCalendar != null) {
+                        time = selectedMonthCalendar!!.time
+                    }
+                    add(java.util.Calendar.MONTH, -1)
+                }
+            }
+            val prevMonthLabel = monthYearFormatter.format(prevMonthTarget.time).replaceFirstChar { it.uppercaseChar() }
+
+            Button(
+                onClick = {
+                    selectedMonthCalendar = (prevMonthTarget.clone() as java.util.Calendar)
+                },
+                modifier = Modifier.testTag("prev_month_button")
+            ) {
+                Icon(Icons.Default.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(prevMonthLabel, style = MaterialTheme.typography.labelMedium)
+            }
+
+            if (selectedMonthCalendar != null) {
+                val nextMonthTarget = remember(selectedMonthCalendar) {
+                    java.util.Calendar.getInstance().apply {
+                        time = selectedMonthCalendar!!.time
+                        add(java.util.Calendar.MONTH, 1)
+                    }
+                }
+
+                val currentCal = java.util.Calendar.getInstance()
+                val isNextCurrentOrFuture = (nextMonthTarget.get(java.util.Calendar.YEAR) > currentCal.get(java.util.Calendar.YEAR)) ||
+                        (nextMonthTarget.get(java.util.Calendar.YEAR) == currentCal.get(java.util.Calendar.YEAR) &&
+                         nextMonthTarget.get(java.util.Calendar.MONTH) >= currentCal.get(java.util.Calendar.MONTH))
+
+                val nextMonthLabel = if (isNextCurrentOrFuture) {
+                    when (language) {
+                        "English" -> "Default View"
+                        "Español" -> "Vista predeterminada"
+                        "Català" -> "Vista predeterminada"
+                        "Français" -> "Vue par défaut"
+                        "Deutsch" -> "Standardansicht"
+                        else -> "Vista Predefinita"
+                    }
+                } else {
+                    monthYearFormatter.format(nextMonthTarget.time).replaceFirstChar { it.uppercaseChar() }
+                }
+
+                Button(
+                    onClick = {
+                        if (isNextCurrentOrFuture) {
+                            selectedMonthCalendar = null
+                        } else {
+                            selectedMonthCalendar = (nextMonthTarget.clone() as java.util.Calendar)
+                        }
+                    },
+                    modifier = Modifier.testTag("next_month_button")
+                ) {
+                    Text(nextMonthLabel, style = MaterialTheme.typography.labelMedium)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                }
+            } else {
+                Box(modifier = Modifier.size(1.dp))
+            }
+        }
+
+        if (finalTx.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Nessuna transazione trovata.".t(language), color = Color.Gray)
+            }
+        } else {
+            // Group transactions by date
+            val dayMs = 24 * 60 * 60 * 1000L
+            val now = System.currentTimeMillis()
+            val startOfToday = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+            val todayGroup = finalTx.filter { it.timestamp >= startOfToday }
+            val yesterdayGroup = finalTx.filter { it.timestamp in (startOfToday - dayMs)..<startOfToday }
+            val olderGroup = finalTx.filter { it.timestamp < (startOfToday - dayMs) }
+
+            val sdfGroup = remember { java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ITALIAN) }
+            val olderGrouped = remember(olderGroup) {
+                olderGroup.groupBy { sdfGroup.format(java.util.Date(it.timestamp)) }
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (todayGroup.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "OGGI".t(language),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                    }
+                    items(todayGroup.size) { index ->
+                        TransactionItemRow(tx = todayGroup[index], viewModel = viewModel)
+                    }
+                }
+
+                if (yesterdayGroup.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "IERI".t(language),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                    }
+                    items(yesterdayGroup.size) { index ->
+                        TransactionItemRow(tx = yesterdayGroup[index], viewModel = viewModel)
+                    }
+                }
+
+                if (olderGrouped.isNotEmpty()) {
+                    olderGrouped.forEach { (dateStr, txsForDate) ->
+                        item {
+                            Text(
+                                text = dateStr,
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                        items(txsForDate.size) { index ->
+                            TransactionItemRow(tx = txsForDate[index], viewModel = viewModel)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
