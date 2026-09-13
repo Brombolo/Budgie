@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.budgie.fhnskp"
     minSdk = 24
     targetSdk = 35
-    versionCode = 3
-    versionName = "0.9.7"
+    versionCode = 4
+    versionName = "0.9.8"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

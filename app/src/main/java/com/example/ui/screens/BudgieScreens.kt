@@ -4456,7 +4456,7 @@ fun SettingsScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text("BUDGIE v0.9.7", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
+            Text("BUDGIE v0.9.8", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
             Text("Progettato per la tua serenità finanziaria".t(language), style = MaterialTheme.typography.labelSmall, color = Color.Gray)
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -4620,6 +4620,8 @@ fun AddTransactionDialog(
                                 calendar.get(java.util.Calendar.MONTH),
                                 calendar.get(java.util.Calendar.DAY_OF_MONTH)
                             )
+                            // Punto 2: Impedisci inserimento date successive a oggi
+                            datePickerDialog.datePicker.maxDate = System.currentTimeMillis()
                             datePickerDialog.show()
                         }) {
                             Icon(Icons.Default.DateRange, contentDescription = "Seleziona Data e Ora".t(language))
@@ -5769,12 +5771,14 @@ fun AccountsScreen(
                 Text(
                     text = "Fondi Complessivi".t(language),
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
                 )
                 Text(
                     text = totalGlobalBalance.formatEuro(),
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.End
                 )
             }
         }
@@ -6013,10 +6017,19 @@ fun EditTransactionDialog(
     var selectedSourceAccountId by remember { mutableStateOf(transaction.sourceAccountId) }
     var selectedDestinationAccountId by remember { mutableStateOf(transaction.destinationAccountId) }
     
+    // Punto 7: Identificazione transazione "Saldo iniziale"
+    val isInitialBalance = transaction.title.equals("Saldo iniziale", ignoreCase = true) || 
+                         transaction.title.equals("Initial Balance", ignoreCase = true) ||
+                         transaction.title.equals("Initialer Kontostand", ignoreCase = true) ||
+                         transaction.title.equals("Solde initial", ignoreCase = true)
+
     // Formatting timestamp
     val sdf = remember { java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.ITALY) }
     var dateStr by remember { mutableStateOf(sdf.format(java.util.Date(transaction.timestamp))) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    
+    val context = LocalContext.current
+    val calendar = remember { Calendar.getInstance() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -6049,8 +6062,46 @@ fun EditTransactionDialog(
 
                 OutlinedTextField(
                     value = dateStr,
-                    onValueChange = { dateStr = it },
-                    label = { Text("Data e Ora (gg/mm/aaaa oo:mm)".t(language)) },
+                    onValueChange = { },
+                    readOnly = true,
+                    label = { Text("Data e Ora".t(language)) },
+                    enabled = !isInitialBalance,
+                    trailingIcon = {
+                        if (!isInitialBalance) {
+                            IconButton(onClick = {
+                                calendar.timeInMillis = try { sdf.parse(dateStr)?.time ?: transaction.timestamp } catch(e: Exception) { transaction.timestamp }
+                                val datePickerDialog = android.app.DatePickerDialog(
+                                    context,
+                                    { _, year, month, dayOfMonth ->
+                                        calendar.set(Calendar.YEAR, year)
+                                        calendar.set(Calendar.MONTH, month)
+                                        calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                        
+                                        android.app.TimePickerDialog(
+                                            context,
+                                            { _, hour, minute ->
+                                                calendar.set(Calendar.HOUR_OF_DAY, hour)
+                                                calendar.set(Calendar.MINUTE, minute)
+                                                calendar.set(Calendar.SECOND, 0)
+                                                calendar.set(Calendar.MILLISECOND, 0)
+                                                dateStr = sdf.format(calendar.time)
+                                            },
+                                            calendar.get(Calendar.HOUR_OF_DAY),
+                                            calendar.get(Calendar.MINUTE),
+                                            true
+                                        ).show()
+                                    },
+                                    calendar.get(Calendar.YEAR),
+                                    calendar.get(Calendar.MONTH),
+                                    calendar.get(Calendar.DAY_OF_MONTH)
+                                )
+                                datePickerDialog.datePicker.maxDate = System.currentTimeMillis()
+                                datePickerDialog.show()
+                            }) {
+                                Icon(Icons.Default.DateRange, contentDescription = "Seleziona Data e Ora".t(language))
+                            }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -6090,26 +6141,38 @@ fun EditTransactionDialog(
                     // Category dropdown
                     Text("Categoria:".t(language), style = MaterialTheme.typography.labelLarge)
                     val relevantCategories = categories.filter { it.type == transaction.type }
-                    BudgieDropdown(
-                        label = "Seleziona Categoria".t(language),
-                        options = relevantCategories,
-                        selectedOption = categories.find { it.id == selectedCategoryId } ?: relevantCategories.firstOrNull(),
-                        optionToString = { cat ->
-                            if (cat != null) {
-                                if (cat.parentCategoryId != null) {
-                                    val parentName = categories.find { it.id == cat.parentCategoryId }?.name ?: ""
-                                    "${cat.iconEmoji} $parentName > ${cat.name}"
+                    val currentCat = categories.find { it.id == selectedCategoryId } ?: relevantCategories.firstOrNull()
+                    
+                    if (isInitialBalance) {
+                        OutlinedTextField(
+                            value = currentCat?.let { "${it.iconEmoji} ${it.name}" } ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = false,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        BudgieDropdown(
+                            label = "Seleziona Categoria".t(language),
+                            options = relevantCategories,
+                            selectedOption = currentCat ?: relevantCategories.first(),
+                            optionToString = { cat ->
+                                if (cat != null) {
+                                    if (cat.parentCategoryId != null) {
+                                        val parentName = categories.find { it.id == cat.parentCategoryId }?.name ?: ""
+                                        "${cat.iconEmoji} $parentName > ${cat.name}"
+                                    } else {
+                                        "${cat.iconEmoji} ${cat.name}"
+                                    }
                                 } else {
-                                    "${cat.iconEmoji} ${cat.name}"
+                                    "Nessuna Categoria".t(language)
                                 }
-                            } else {
-                                "Nessuna Categoria".t(language)
+                            },
+                            onOptionSelected = { cat ->
+                                selectedCategoryId = cat?.id
                             }
-                        },
-                        onOptionSelected = { cat ->
-                            selectedCategoryId = cat?.id
-                        }
-                    )
+                        )
+                    }
                 }
             }
         },
@@ -6129,6 +6192,9 @@ fun EditTransactionDialog(
                         }
                         parsedDate == null -> {
                             errorMessage = "Formato data non valido. Usa il formato gg/mm/aaaa oo:mm".t(language)
+                        }
+                        !isInitialBalance && parsedDate > System.currentTimeMillis() -> {
+                            errorMessage = "Errore: la data non può essere futura.".t(language)
                         }
                         transaction.type == "Transfer" && selectedDestinationAccountId == selectedSourceAccountId -> {
                             errorMessage = "Seleziona un conto di destinazione diverso dal conto di origine.".t(language)
@@ -6161,13 +6227,15 @@ fun EditTransactionDialog(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteTransaction(transaction)
-                        onDismiss()
+                if (!isInitialBalance) {
+                    TextButton(
+                        onClick = {
+                            viewModel.deleteTransaction(transaction)
+                            onDismiss()
+                        }
+                    ) {
+                        Text("Elimina".t(language), color = Color.Red)
                     }
-                ) {
-                    Text("Elimina".t(language), color = Color.Red)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 TextButton(onClick = onDismiss) {
@@ -6888,6 +6956,7 @@ fun PlanningScreen(
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
 
     var showAddPlannedDialog by remember { mutableStateOf(false) }
+    var editingPlanned by remember { mutableStateOf<PlannedTransaction?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -7057,60 +7126,62 @@ fun PlanningScreen(
                                         .background(itemColor)
                                 )
 
-                                Column(modifier = Modifier.weight(1f)) {
-                                    // Header Row (Always visible and clickable to expand/collapse)
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(16.dp)
+                                ) {
+                                    // Punto 10: Riprogettazione layout item
+                                    // Riga superiore: Titolo a tutta riga
+                                    Text(
+                                        text = if (planned.title.isNotBlank()) {
+                                            planned.title
+                                        } else {
+                                            when (planned.type) {
+                                                "Income" -> "Entrata".t(language)
+                                                "Expense" -> "Spesa".t(language)
+                                                else -> "Giroconto".t(language)
+                                            }
+                                        },
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Riga inferiore: Icona, Tipo/Frequenza e Importo
                                     Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { expanded = !expanded }
-                                            .padding(16.dp),
+                                        modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(44.dp)
+                                                    .size(32.dp)
                                                     .clip(CircleShape)
                                                     .background(bgColor),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Text(
-                                                    text = emojiIcon,
-                                                    fontSize = 20.sp
-                                                )
+                                                Text(text = emojiIcon, fontSize = 16.sp)
                                             }
                                             
                                             Column {
-                                                Text(
-                                                    text = if (planned.title.isNotBlank()) {
-                                                        planned.title
-                                                    } else {
-                                                        when (planned.type) {
-                                                            "Income" -> "Entrata".t(language)
-                                                            "Expense" -> "Spesa".t(language)
-                                                            else -> "Giroconto".t(language)
-                                                        }
-                                                    },
-                                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                                                )
-                                                if (planned.isRecurring) {
-                                                    Text(
-                                                        text = "${"Ogni".t(language)} ${planned.frequencyInterval} ${planned.frequencyUnit.toString().t(language)}",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = Color.Gray
-                                                    )
+                                                val typeLabel = if (planned.isRecurring) {
+                                                    "${"Ogni".t(language)} ${planned.frequencyInterval} ${planned.frequencyUnit.toString().t(language)}"
                                                 } else {
-                                                    Text(
-                                                        text = "Programmato".t(language),
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = Color.Gray
-                                                    )
+                                                    "Programmato".t(language)
                                                 }
+                                                Text(
+                                                    text = typeLabel,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color.Gray,
+                                                    softWrap = true
+                                                )
                                             }
                                         }
 
@@ -7125,39 +7196,26 @@ fun PlanningScreen(
                                                     "Income" -> Color(0xFF006D43)
                                                     "Expense" -> Color(0xFFBA1A1A)
                                                     else -> MaterialTheme.colorScheme.primary
-                                                }
+                                                },
+                                                textAlign = TextAlign.End
                                             )
-                                            
-                                            if (expanded) {
-                                                IconButton(
-                                                    onClick = { viewModel.deletePlannedTransaction(planned) }
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Delete,
-                                                        contentDescription = "Elimina".t(language),
-                                                        tint = MaterialTheme.colorScheme.error
-                                                    )
-                                                }
-                                            }
                                             
                                             Icon(
                                                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                                 contentDescription = if (expanded) "Collassa".t(language) else "Espandi".t(language),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                modifier = Modifier.clickable { expanded = !expanded }
                                             )
                                         }
                                     }
 
                                     // Expanded details section
                                     if (expanded) {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
-                                        ) {
-                                            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
-                                            Spacer(modifier = Modifier.height(12.dp))
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+                                        Spacer(modifier = Modifier.height(12.dp))
 
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -7180,11 +7238,11 @@ fun PlanningScreen(
                                                         )
                                                     }
                                                     if (categoryName != null) {
-                                                        Column(
-                                                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                                                             modifier = Modifier.padding(top = 4.dp)
                                                         ) {
-                                                            // Category Badge
                                                             Box(
                                                                 modifier = Modifier
                                                                     .clip(RoundedCornerShape(8.dp))
@@ -7203,37 +7261,19 @@ fun PlanningScreen(
                                                                     )
                                                                 }
                                                             }
-
-                                                            // Subcategory Badge if exists
                                                             if (subCategoryName != null) {
-                                                                Row(
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                                    modifier = Modifier.padding(start = 8.dp)
+                                                                Text(">", fontSize = 10.sp, color = Color.Gray)
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .clip(RoundedCornerShape(8.dp))
+                                                                        .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f))
+                                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
                                                                 ) {
                                                                     Text(
-                                                                        text = "↳",
-                                                                        style = MaterialTheme.typography.labelSmall,
-                                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                                        text = subCategoryName,
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                        color = MaterialTheme.colorScheme.onTertiaryContainer
                                                                     )
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .clip(RoundedCornerShape(8.dp))
-                                                                            .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f))
-                                                                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                                                                    ) {
-                                                                        Row(
-                                                                            verticalAlignment = Alignment.CenterVertically,
-                                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                                        ) {
-                                                                            Text(subCategoryObj?.iconEmoji ?: "", fontSize = 12.sp)
-                                                                            Text(
-                                                                                text = subCategoryName,
-                                                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                                                                            )
-                                                                        }
-                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -7258,6 +7298,36 @@ fun PlanningScreen(
                                                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                                                         color = if (planned.isActive) MaterialTheme.colorScheme.primary else Color.Gray
                                                     )
+                                                }
+                                            }
+
+                                            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.05f))
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                // Punto 1: Modifica Pianificazione
+                                                TextButton(
+                                                    onClick = { editingPlanned = planned },
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Modifica".t(language), fontSize = 12.sp)
+                                                }
+                                                
+                                                Spacer(modifier = Modifier.width(8.dp))
+
+                                                TextButton(
+                                                    onClick = { viewModel.deletePlannedTransaction(planned) },
+                                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Elimina".t(language), fontSize = 12.sp)
                                                 }
                                             }
                                         }
@@ -7290,12 +7360,21 @@ fun PlanningScreen(
             onDismiss = { showAddPlannedDialog = false }
         )
     }
+
+    if (editingPlanned != null) {
+        AddPlannedTransactionDialog(
+            viewModel = viewModel,
+            onDismiss = { editingPlanned = null },
+            existingPlanned = editingPlanned
+        )
+    }
 }
 
 @Composable
 fun AddPlannedTransactionDialog(
     viewModel: WalletViewModel,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    existingPlanned: PlannedTransaction? = null
 ) {
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
@@ -7303,11 +7382,11 @@ fun AddPlannedTransactionDialog(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var step by remember { mutableStateOf(1) } // Step 1 or Step 2
-    var title by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("Expense") } // "Expense", "Income", "Transfer"
-    var mode by remember { mutableStateOf("Ricorrente") } // "Ricorrente", "Programmato"
-    var frequencyIntervalStr by remember { mutableStateOf("1") }
-    var frequencyUnit by remember { mutableStateOf("giorni") } // "giorni", "settimane", "mesi"
+    var title by remember { mutableStateOf(existingPlanned?.title ?: "") }
+    var type by remember { mutableStateOf(existingPlanned?.type ?: "Expense") } // "Expense", "Income", "Transfer"
+    var mode by remember { mutableStateOf(if (existingPlanned?.isRecurring == false) "Programmato" else "Ricorrente") } // "Ricorrente", "Programmato"
+    var frequencyIntervalStr by remember { mutableStateOf(existingPlanned?.frequencyInterval?.toString() ?: "1") }
+    var frequencyUnit by remember { mutableStateOf(existingPlanned?.frequencyUnit ?: "giorni") } // "giorni", "settimane", "mesi"
     
     // Default to tomorrow at the beginning of the day (00:00:00.000)
     val todayCal = java.util.Calendar.getInstance().apply {
@@ -7319,18 +7398,18 @@ fun AddPlannedTransactionDialog(
     val tomorrowTime = todayCal.timeInMillis + 24 * 60 * 60 * 1000
     
     val defaultCalendar = java.util.Calendar.getInstance().apply {
-        timeInMillis = tomorrowTime
+        timeInMillis = existingPlanned?.startDate ?: tomorrowTime
     }
     var startDate by remember { mutableStateOf(defaultCalendar.timeInMillis) }
-    var amountStr by remember { mutableStateOf("") }
+    var amountStr by remember { mutableStateOf(existingPlanned?.amount?.toString() ?: "") }
     
-    var sourceAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: 0) }
+    var sourceAccountId by remember { mutableStateOf(existingPlanned?.sourceAccountId ?: accounts.firstOrNull()?.id ?: 0) }
     var destinationAccountId by remember { 
-        mutableStateOf(accounts.filter { it.id != sourceAccountId }.firstOrNull()?.id) 
+        mutableStateOf(existingPlanned?.destinationAccountId ?: accounts.filter { it.id != sourceAccountId }.firstOrNull()?.id) 
     }
     
-    var selectedCategoryId by remember { mutableStateOf<Int?>(null) }
-    var selectedSubCategoryId by remember { mutableStateOf<Int?>(null) }
+    var selectedCategoryId by remember { mutableStateOf(existingPlanned?.categoryId) }
+    var selectedSubCategoryId by remember { mutableStateOf(existingPlanned?.subCategoryId) }
     var validationError by remember { mutableStateOf<String?>(null) }
 
     // If destination is same as source, change it
@@ -7629,7 +7708,19 @@ fun AddPlannedTransactionDialog(
                                 selectedCategoryId ?: mainCats.firstOrNull()?.id
                             }
                             
-                            val newPlanned = PlannedTransaction(
+                            val updatedPlanned = (existingPlanned ?: PlannedTransaction(
+                                title = title,
+                                type = type,
+                                isRecurring = (mode == "Ricorrente"),
+                                frequencyInterval = if (mode == "Ricorrente") interval else null,
+                                frequencyUnit = if (mode == "Ricorrente") frequencyUnit else null,
+                                startDate = startDate,
+                                amount = amount,
+                                categoryId = catId,
+                                subCategoryId = if (type == "Transfer") null else selectedSubCategoryId,
+                                sourceAccountId = sourceAccountId,
+                                destinationAccountId = if (type == "Transfer") destinationAccountId else null
+                            )).copy(
                                 title = title,
                                 type = type,
                                 isRecurring = (mode == "Ricorrente"),
@@ -7643,7 +7734,11 @@ fun AddPlannedTransactionDialog(
                                 destinationAccountId = if (type == "Transfer") destinationAccountId else null
                             )
                             
-                            viewModel.addPlannedTransaction(newPlanned)
+                            if (existingPlanned != null) {
+                                viewModel.updatePlannedTransaction(updatedPlanned)
+                            } else {
+                                viewModel.addPlannedTransaction(updatedPlanned)
+                            }
                             onDismiss()
                         }
                     }

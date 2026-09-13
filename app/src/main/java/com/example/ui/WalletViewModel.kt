@@ -204,38 +204,12 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
             repository.clearAllUserData()
             repository.seedInitialDataIfEmpty(language)
             
-            // Insert the first account
-            val accountId = repository.insertAccount(Account(
+            // Punto 7: Usa addAccount per assicurare la transazione di saldo iniziale
+            addAccount(
                 name = firstAccountName,
                 type = firstAccountType,
-                balance = firstAccountBalance,
-                isIncludedInTotal = true
-            )).toInt()
-
-            if (firstAccountBalance != 0.0) {
-                // Seed category for "Saldo iniziale"
-                val catName = when (language) {
-                    "English" -> "Initial Balance"
-                    "Español" -> "Saldo inicial"
-                    "Català" -> "Saldo inicial"
-                    "Français" -> "Solde initial"
-                    "Deutsch" -> "Initialer Kontostand"
-                    else -> "Saldo Iniziale"
-                }
-                val newCatId = repository.insertCategory(Category(name = catName, iconEmoji = "🏁", parentCategoryId = null, isCustom = false, type = "Income")).toInt()
-                
-                repository.insertTransaction(
-                    Transaction(
-                        title = catName,
-                        amount = kotlin.math.abs(firstAccountBalance),
-                        type = if (firstAccountBalance >= 0) "Income" else "Expense",
-                        timestamp = System.currentTimeMillis(),
-                        categoryId = newCatId,
-                        sourceAccountId = accountId,
-                        isFromPlanned = false
-                    )
-                )
-            }
+                initialBalance = firstAccountBalance
+            )
             
             // Save settings to SharedPreferences & Flows
             val editor = prefs.edit()
@@ -272,13 +246,10 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
         viewModelScope.launch {
             repository.clearAllUserData()
             repository.seedInitialDataIfEmpty("Italiano")
-            repository.insertAccount(
-                Account(
-                    name = "Conto Principale",
-                    type = "Conto Corrente",
-                    balance = 0.0,
-                    isIncludedInTotal = true
-                )
+            addAccount(
+                name = "Conto Principale",
+                type = "Conto Corrente",
+                initialBalance = 0.0
             )
             
             // Reset all user customization preferences to default
@@ -480,7 +451,9 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     // --- DATABASE WRITERS ---
     fun addAccount(name: String, type: String, initialBalance: Double) {
         viewModelScope.launch {
-            val accountId = repository.insertAccount(Account(name = name, type = type, balance = initialBalance, isIncludedInTotal = true)).toInt()
+            // Punto 7: Per evitare raddoppiamenti o saldi sfasati, il conto nasce a 0.0
+            // Sarà la transazione di "Saldo iniziale" a popolarne la consistenza algebrica.
+            val accountId = repository.insertAccount(Account(name = name, type = type, balance = 0.0, isIncludedInTotal = true)).toInt()
             
             if (initialBalance != 0.0) {
                 // Find or create "Saldo iniziale" category
@@ -493,16 +466,15 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                     saldoInizialeCat = Category(id = newCatId, name = targetCatName, iconEmoji = "🏁", parentCategoryId = null, isCustom = false, type = "Income")
                 }
                 
-                repository.insertTransaction(
-                    Transaction(
-                        title = saldoInizialeCat.name,
-                        amount = kotlin.math.abs(initialBalance),
-                        type = if (initialBalance >= 0) "Income" else "Expense",
-                        timestamp = System.currentTimeMillis(),
-                        categoryId = saldoInizialeCat.id,
-                        sourceAccountId = accountId,
-                        isFromPlanned = false
-                    )
+                // Inseriamo la transazione simulando il comportamento standard che aggiorna automaticamente il saldo del conto appena creato
+                addTransaction(
+                    title = saldoInizialeCat.name,
+                    amount = kotlin.math.abs(initialBalance),
+                    type = if (initialBalance >= 0) "Income" else "Expense",
+                    categoryId = saldoInizialeCat.id,
+                    sourceAccountId = accountId,
+                    destinationAccountId = null,
+                    customTimestamp = System.currentTimeMillis()
                 )
             }
         }
