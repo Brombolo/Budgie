@@ -1,5 +1,11 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -50,6 +56,7 @@ import com.example.ui.translations.TranslationProvider
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.round
 
 
 @Composable
@@ -62,8 +69,8 @@ fun ResponsiveText(
     maxLines: Int = 1,
     targetFontSize: androidx.compose.ui.unit.TextUnit = style.fontSize
 ) {
-    var resizedFontSize by remember { mutableStateOf(targetFontSize) }
-    var readyToDraw by remember { mutableStateOf(false) }
+    var resizedFontSize by remember(text, targetFontSize) { mutableStateOf(targetFontSize) }
+    var readyToDraw by remember(text) { mutableStateOf(false) }
 
     Text(
         text = text,
@@ -96,8 +103,8 @@ fun ResponsiveTextAnnotated(
     maxLines: Int = 1,
     targetFontSize: androidx.compose.ui.unit.TextUnit = style.fontSize
 ) {
-    var resizedFontSize by remember { mutableStateOf(targetFontSize) }
-    var readyToDraw by remember { mutableStateOf(false) }
+    var resizedFontSize by remember(text, targetFontSize) { mutableStateOf(targetFontSize) }
+    var readyToDraw by remember(text) { mutableStateOf(false) }
 
     Text(
         text = text,
@@ -118,6 +125,121 @@ fun ResponsiveTextAnnotated(
             }
         }
     )
+}
+
+@Composable
+fun NoteTextFieldWithAutocomplete(
+    value: String,
+    onValueChange: (String) -> Unit,
+    wordFrequencies: Map<String, Int>,
+    label: String,
+    language: String,
+    modifier: Modifier = Modifier,
+    maxChars: Int = 22,
+    singleLine: Boolean = true
+) {
+    // Current active word prefix being typed
+    val currentWordPrefix = remember(value) {
+        val lastSpaceIndex = value.lastIndexOfAny(charArrayOf(' ', ',', '.', ';', ':', '!', '?', '-'))
+        if (lastSpaceIndex == -1) value else value.substring(lastSpaceIndex + 1)
+    }
+
+    val candidateWords = remember(currentWordPrefix, wordFrequencies) {
+        if (currentWordPrefix.isBlank()) {
+            emptyList()
+        } else {
+            wordFrequencies.entries
+                .filter { (word, _) ->
+                    word.startsWith(currentWordPrefix, ignoreCase = true) &&
+                    !word.equals(currentWordPrefix, ignoreCase = true)
+                }
+                .sortedWith(
+                    compareByDescending<Map.Entry<String, Int>> { it.value }
+                        .thenBy { it.key.length }
+                        .thenBy { it.key.lowercase() }
+                )
+                .map { it.key }
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val availableWidthDp = this.maxWidth.value
+        // Reserve width for "💡" icon (28dp) + margins
+        val widthBudgetDp = (availableWidthDp - 32f).coerceAtLeast(80f)
+
+        val fittingSuggestions = remember(candidateWords, widthBudgetDp) {
+            var usedWidth = 0f
+            val result = mutableListOf<String>()
+            for (word in candidateWords) {
+                // Estimate chip width: padding (20dp) + approx 7.5dp per character
+                val estimatedChipWidth = 20f + (word.length * 7.5f)
+                val spacing = if (result.isNotEmpty()) 6f else 0f
+                if (usedWidth + estimatedChipWidth + spacing <= widthBudgetDp && result.size < 4) {
+                    result.add(word)
+                    usedWidth += estimatedChipWidth + spacing
+                } else {
+                    break // Exceeds available width in single row, stop adding
+                }
+            }
+            result
+        }
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { newValue ->
+                    if (newValue.length <= maxChars && !newValue.contains("\n")) {
+                        onValueChange(newValue)
+                    }
+                },
+                label = { Text(label) },
+                singleLine = singleLine,
+                maxLines = 1,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (fittingSuggestions.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "💡",
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 2.dp)
+                    )
+                    fittingSuggestions.forEach { suggestion ->
+                        SuggestionChip(
+                            onClick = {
+                                val lastSpaceIndex = value.lastIndexOfAny(charArrayOf(' ', ',', '.', ';', ':', '!', '?', '-'))
+                                val prefixText = if (lastSpaceIndex == -1) "" else value.substring(0, lastSpaceIndex + 1)
+                                val completedText = prefixText + suggestion + " "
+                                if (completedText.length <= maxChars) {
+                                    onValueChange(completedText)
+                                } else {
+                                    onValueChange((prefixText + suggestion).take(maxChars))
+                                }
+                            },
+                            label = {
+                                Text(
+                                    text = suggestion,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1
+                                )
+                            },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            ),
+                            border = null
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 fun String.t(language: String): String {
@@ -314,6 +436,33 @@ fun Double.formatAmount(symbol: String = "€"): String {
         "$symbol $formatted"
     } else {
         "$symbol$formatted"
+    }
+}
+
+fun Double.formatForInput(): String = String.format(Locale.US, "%.2f", this)
+
+fun getPeriodColor(period: String): Color {
+    return when (period) {
+        "Daily" -> Color(0xFF00897B)   // Teal / Cyan
+        "Weekly" -> Color(0xFFE65100)  // Amber / Orange
+        "Monthly" -> Color(0xFF3F51B5) // Indigo / Purple
+        else -> Color(0xFF3F51B5)
+    }
+}
+
+fun getAccountEmoji(account: Account?): String {
+    if (account == null) return "🌍"
+    val t = account.type.trim()
+    return if (t.isNotBlank() && isValidSingleEmoji(t)) {
+        t
+    } else {
+        when (t.lowercase(Locale.ROOT)) {
+            "bank", "conto corrente", "banca" -> "🏦"
+            "card", "carta", "carta di credito" -> "💳"
+            "cash", "contanti", "contante" -> "💵"
+            "savings", "risparmi", "salvadanaio" -> "💰"
+            else -> if (t.isNotBlank()) t else "💳"
+        }
     }
 }
 
@@ -910,23 +1059,23 @@ fun DashboardScreen(
                 else -> Color(0xFFBA1A1A)             // Red
             }
             
-            val accountName = if (pinnedBudget.accountId == null) {
-                "Tutti i Conti".t(language)
-            } else {
-                accounts.find { it.id == pinnedBudget.accountId }?.name ?: "Conto".t(language)
-            }
-            
+            val account = if (pinnedBudget.accountId != null) accounts.find { it.id == pinnedBudget.accountId } else null
             val cat = if (pinnedBudget.categoryId != null) categories.find { it.id == pinnedBudget.categoryId } else null
             val sub = if (pinnedBudget.subCategoryId != null) categories.find { it.id == pinnedBudget.subCategoryId } else null
-            
-            val categoryMainName = if (cat != null) {
-                "${cat.iconEmoji} ${cat.name}"
+
+            val (emojiSymbol, displayName) = if (pinnedBudget.categoryId != null) {
+                val emoji = sub?.iconEmoji ?: cat?.iconEmoji ?: "🏷️"
+                val name = if (cat != null && sub != null) {
+                    "${cat.name} > ${sub.name}"
+                } else {
+                    cat?.name ?: "Categoria".t(language)
+                }
+                Pair(emoji, name)
             } else {
-                "🌍 " + "Complessivo".t(language) + " ($accountName)"
+                val emoji = if (account != null) account.type.toAccountEmoji() else "🌍"
+                val name = if (account != null) account.name else "Tutti i Conti".t(language)
+                Pair(emoji, name)
             }
-            
-            val isAllSubcategories = pinnedBudget.categoryId != null && pinnedBudget.subCategoryId == null
-            val subCategoryName = sub?.name ?: ""
 
             val periodLabel = when (pinnedBudget.period) {
                 "Daily" -> "Giornaliero".t(language)
@@ -934,6 +1083,7 @@ fun DashboardScreen(
                 "Monthly" -> "Mensile".t(language)
                 else -> "Mensile".t(language)
             }
+            val periodColor = getPeriodColor(pinnedBudget.period)
 
             Box(
                 modifier = Modifier
@@ -987,13 +1137,13 @@ fun DashboardScreen(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                                .background(periodColor.copy(alpha = 0.15f))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = periodLabel.t(language),
+                                text = periodLabel,
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
+                                color = periodColor
                             )
                         }
                     }
@@ -1004,24 +1154,11 @@ fun DashboardScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = categoryMainName,
+                            text = "$emojiSymbol $displayName",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        if (isAllSubcategories) {
-                            Text(
-                                text = "(Tutte le sottocategorie)".t(language),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else if (subCategoryName.isNotEmpty()) {
-                            Text(
-                                text = "($subCategoryName)",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
 
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1120,7 +1257,13 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        var trendPeriod by remember { mutableStateOf("Settimana") } // "Settimana" | "Mese" | "Anno"
+                        val timeRangeCode by viewModel.selectedTimeRange.collectAsStateWithLifecycle()
+                        val trendPeriod = when (timeRangeCode) {
+                            "Week" -> "Settimana"
+                            "Month" -> "Mese"
+                            "Year" -> "Anno"
+                            else -> "Settimana"
+                        }
 
                         // Toggle Row
                         Row(
@@ -1136,7 +1279,15 @@ fun DashboardScreen(
                                             if (isSelected) MaterialTheme.colorScheme.primary 
                                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                         )
-                                        .clickable { trendPeriod = period }
+                                        .clickable {
+                                            val code = when (period) {
+                                                "Settimana" -> "Week"
+                                                "Mese" -> "Month"
+                                                "Anno" -> "Year"
+                                                else -> "Week"
+                                            }
+                                            viewModel.setTimeRange(code)
+                                        }
                                         .padding(horizontal = 12.dp, vertical = 4.dp)
                                 ) {
                                     Text(
@@ -1208,6 +1359,39 @@ fun DashboardScreen(
                                     text = kotlin.math.abs(netBalance).formatEuroAnnotated(prefix = if (netBalance >= 0) "+" else "-"),
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                     color = if (netBalance >= 0) Color(0xFF006D43) else Color(0xFFBA1A1A)
+                                )
+                            }
+
+                            val locale = remember(language) {
+                                when (language) {
+                                    "English" -> Locale.ENGLISH
+                                    "Español" -> Locale("es")
+                                    "Català" -> Locale("ca")
+                                    "Français" -> Locale.FRENCH
+                                    "Deutsch" -> Locale.GERMAN
+                                    else -> Locale.ITALIAN
+                                }
+                            }
+
+                            val isNotMonday = !startOfWeek.equals("Lunedì", ignoreCase = true) && !startOfWeek.equals("Monday", ignoreCase = true)
+                            if (trendPeriod == "Settimana" && isNotMonday) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${"Inizio settimana impostato come:".t(language)} ${startOfWeek.t(language)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            } else if (trendPeriod == "Mese" && finMonthDay != 1) {
+                                val monthStartDateStr = remember(bounds.first, locale) {
+                                    SimpleDateFormat("d MMMM yyyy", locale).format(Date(bounds.first))
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${"Inizio mese fiscale corrente:".t(language)} $monthStartDateStr",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 2.dp)
                                 )
                             }
                         }
@@ -1480,10 +1664,9 @@ fun HistoryScreen(
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
 
-    val finMonthDay by viewModel.financialMonthStartDay.collectAsStateWithLifecycle()
-
     var searchQuery by remember { mutableStateOf("") }
-    var selectedMonthCalendar by remember { mutableStateOf<java.util.Calendar?>(null) }
+    // Inizializzato sempre al mese solare corrente
+    var selectedMonthCalendar by remember { mutableStateOf(Calendar.getInstance()) }
 
     val locale = remember(language) {
         when (language) {
@@ -1498,20 +1681,19 @@ fun HistoryScreen(
     val monthNameFormatter = remember(locale) { java.text.SimpleDateFormat("MMMM", locale) }
     val monthYearFormatter = remember(locale) { java.text.SimpleDateFormat("MMMM yyyy", locale) }
 
-    // Start limit of previous financial month
-    val startOfPrevLimit = remember(finMonthDay, filteredTx) {
-        val cal = java.util.Calendar.getInstance()
-        cal.add(java.util.Calendar.MONTH, -1)
-        viewModel.getMonthlyPeriodBounds(cal.timeInMillis, finMonthDay).first
-    }
-
-    val (startLimit, endLimit) = remember(selectedMonthCalendar, finMonthDay, filteredTx) {
-        if (selectedMonthCalendar == null) {
-            Pair(startOfPrevLimit, Long.MAX_VALUE)
-        } else {
-            val bounds = viewModel.getMonthlyPeriodBounds(selectedMonthCalendar!!.timeInMillis, finMonthDay)
-            Pair(bounds.first, bounds.second)
+    // Limiti del mese solare selezionato (dal 1° del mese alle 00:00:00 all'ultimo giorno del mese alle 23:59:59.999)
+    val (startLimit, endLimit) = remember(selectedMonthCalendar) {
+        val startCal = (selectedMonthCalendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }
+        val endCal = (startCal.clone() as Calendar).apply {
+            add(Calendar.MONTH, 1)
+        }
+        Pair(startCal.timeInMillis, endCal.timeInMillis - 1)
     }
 
     val txInPeriod = remember(filteredTx, startLimit, endLimit) {
@@ -1534,16 +1716,13 @@ fun HistoryScreen(
                 val sourceAccName = accounts.find { it.id == tx.sourceAccountId }?.name ?: ""
                 val destAccName = tx.destinationAccountId?.let { did -> accounts.find { it.id == did }?.name } ?: ""
 
-                val sdfDay = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ITALIAN)
-                val txDateStr = sdfDay.format(java.util.Date(tx.timestamp))
-                val txDateAlt = txDateStr.replace("/", "-")
+                val txCal = java.util.Calendar.getInstance().apply { timeInMillis = tx.timestamp }
 
-                val monthNameIt = java.text.SimpleDateFormat("MMMM", java.util.Locale.ITALIAN).format(java.util.Date(tx.timestamp))
-                val monthNameEn = java.text.SimpleDateFormat("MMMM", java.util.Locale.ENGLISH).format(java.util.Date(tx.timestamp))
-                val yearStr = java.text.SimpleDateFormat("yyyy", java.util.Locale.ITALIAN).format(java.util.Date(tx.timestamp))
+                val sdfDay = SimpleDateFormat("dd/MM/yyyy", Locale.ITALIAN)
+                val txDateStr = sdfDay.format(Date(tx.timestamp))
 
-                val fullMonthYearIt = "$monthNameIt $yearStr"
-                val fullMonthYearEn = "$monthNameEn $yearStr"
+                // Formato senza zero iniziale per facilitare ricerche come "5/9/2026" o "9/2026"
+                val txDateStrNoZero = "${txCal.get(Calendar.DAY_OF_MONTH)}/${txCal.get(Calendar.MONTH) + 1}/${txCal.get(Calendar.YEAR)}"
 
                 tx.title.contains(searchQuery, ignoreCase = true) ||
                 categoryName.contains(searchQuery, ignoreCase = true) ||
@@ -1551,11 +1730,7 @@ fun HistoryScreen(
                 sourceAccName.contains(searchQuery, ignoreCase = true) ||
                 destAccName.contains(searchQuery, ignoreCase = true) ||
                 txDateStr.contains(searchQuery, ignoreCase = true) ||
-                txDateAlt.contains(searchQuery, ignoreCase = true) ||
-                monthNameIt.contains(searchQuery, ignoreCase = true) ||
-                monthNameEn.contains(searchQuery, ignoreCase = true) ||
-                fullMonthYearIt.contains(searchQuery, ignoreCase = true) ||
-                fullMonthYearEn.contains(searchQuery, ignoreCase = true)
+                txDateStrNoZero.contains(searchQuery, ignoreCase = true)
             }
         }
     }
@@ -1620,30 +1795,15 @@ fun HistoryScreen(
             maxLines = 1
         )
 
-        // Info text showing visible date range / active period
-        val infoText = if (selectedMonthCalendar == null) {
-            val startOfPrev = java.util.Date(startLimit)
-            val prevMonthName = monthNameFormatter.format(startOfPrev).replaceFirstChar { it.uppercaseChar() }
-            val dayOfMonth = java.util.Calendar.getInstance().apply { time = startOfPrev }.get(java.util.Calendar.DAY_OF_MONTH)
-
-            when (language) {
-                "English" -> "Showing transactions from $prevMonthName ${dayOfMonth}th to today"
-                "Español" -> "Mostrando transacciones desde el $dayOfMonth de $prevMonthName hasta hoy"
-                "Català" -> "Mostrant transaccions des del $dayOfMonth de $prevMonthName fins a avui"
-                "Français" -> "Affichage des transactions du $dayOfMonth $prevMonthName à aujourd'hui"
-                "Deutsch" -> "Transaktionen vom $dayOfMonth. $prevMonthName bis heute anzeigen"
-                else -> "Mostrate transazioni dal $dayOfMonth $prevMonthName ad oggi"
-            }
-        } else {
-            val currentMonthName = monthYearFormatter.format(selectedMonthCalendar!!.time).replaceFirstChar { it.uppercaseChar() }
-            when (language) {
-                "English" -> "Showing transactions of $currentMonthName"
-                "Español" -> "Mostrando transacciones de $currentMonthName"
-                "Català" -> "Mostrant transaccions de $currentMonthName"
-                "Français" -> "Affichage des transactions de $currentMonthName"
-                "Deutsch" -> "Transaktionen von $currentMonthName anzeigen"
-                else -> "Mostrate transazioni di $currentMonthName"
-            }
+        // Info text showing visible date range (Mese Solare)
+        val currentMonthName = monthYearFormatter.format(selectedMonthCalendar.time).replaceFirstChar { it.uppercaseChar() }
+        val infoText = when (language) {
+            "English" -> "Showing transactions for $currentMonthName"
+            "Español" -> "Mostrando transacciones de $currentMonthName"
+            "Català" -> "Mostrant transaccions de $currentMonthName"
+            "Français" -> "Affichage des transactions de $currentMonthName"
+            "Deutsch" -> "Transaktionen von $currentMonthName anzeigen"
+            else -> "Mostrate transazioni di $currentMonthName"
         }
 
         Text(
@@ -1653,17 +1813,19 @@ fun HistoryScreen(
             modifier = Modifier.padding(horizontal = 8.dp)
         )
 
-        // Month pagination navigation
+        // Month pagination navigation (legato esclusivamente al mese solare con limite massimo al mese corrente)
+        val nowCal = java.util.Calendar.getInstance()
+        val isCurrentCalendarMonth = (selectedMonthCalendar.get(java.util.Calendar.YEAR) == nowCal.get(
+            Calendar.YEAR)) &&
+                (selectedMonthCalendar.get(Calendar.MONTH) == nowCal.get(Calendar.MONTH))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             val prevMonthTarget = remember(selectedMonthCalendar) {
-                java.util.Calendar.getInstance().apply {
-                    if (selectedMonthCalendar != null) {
-                        time = selectedMonthCalendar!!.time
-                    }
+                (selectedMonthCalendar.clone() as java.util.Calendar).apply {
                     add(java.util.Calendar.MONTH, -1)
                 }
             }
@@ -1680,39 +1842,43 @@ fun HistoryScreen(
                 Text(prevMonthLabel, style = MaterialTheme.typography.labelMedium)
             }
 
-            if (selectedMonthCalendar != null) {
-                val nextMonthTarget = remember(selectedMonthCalendar) {
-                    java.util.Calendar.getInstance().apply {
-                        time = selectedMonthCalendar!!.time
-                        add(java.util.Calendar.MONTH, 1)
-                    }
+            // Centered Calendar Today Icon Button
+            if (!isCurrentCalendarMonth) {
+                IconButton(
+                    onClick = {
+                        selectedMonthCalendar = Calendar.getInstance()
+                    },
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .testTag("current_month_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarToday,
+                        contentDescription = "Mese Corrente".t(language),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
+            } else {
+                Spacer(modifier = Modifier.width(1.dp))
+            }
 
-                val currentCal = java.util.Calendar.getInstance()
-                val isNextCurrentOrFuture = (nextMonthTarget.get(java.util.Calendar.YEAR) > currentCal.get(java.util.Calendar.YEAR)) ||
-                        (nextMonthTarget.get(java.util.Calendar.YEAR) == currentCal.get(java.util.Calendar.YEAR) &&
-                         nextMonthTarget.get(java.util.Calendar.MONTH) >= currentCal.get(java.util.Calendar.MONTH))
-
-                val nextMonthLabel = if (isNextCurrentOrFuture) {
-                    when (language) {
-                        "English" -> "Default View"
-                        "Español" -> "Vista predeterminada"
-                        "Català" -> "Vista predeterminada"
-                        "Français" -> "Vue par défaut"
-                        "Deutsch" -> "Standardansicht"
-                        else -> "Vista Predefinita"
-                    }
-                } else {
-                    monthYearFormatter.format(nextMonthTarget.time).replaceFirstChar { it.uppercaseChar() }
+            // Next Month Button (ONLY if next month is <= current calendar month)
+            val nextMonthTarget = remember(selectedMonthCalendar) {
+                (selectedMonthCalendar.clone() as Calendar).apply {
+                    add(Calendar.MONTH, 1)
                 }
+            }
 
+            val canGoNext = (nextMonthTarget.get(Calendar.YEAR) < nowCal.get(Calendar.YEAR)) ||
+                    (nextMonthTarget.get(Calendar.YEAR) == nowCal.get(Calendar.YEAR) &&
+                     nextMonthTarget.get(Calendar.MONTH) <= nowCal.get(Calendar.MONTH))
+
+            if (canGoNext) {
+                val nextMonthLabel = monthYearFormatter.format(nextMonthTarget.time).replaceFirstChar { it.uppercaseChar() }
                 Button(
                     onClick = {
-                        if (isNextCurrentOrFuture) {
-                            selectedMonthCalendar = null
-                        } else {
-                            selectedMonthCalendar = (nextMonthTarget.clone() as java.util.Calendar)
-                        }
+                        selectedMonthCalendar = (nextMonthTarget.clone() as Calendar)
                     },
                     modifier = Modifier.testTag("next_month_button")
                 ) {
@@ -1721,7 +1887,7 @@ fun HistoryScreen(
                     Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
                 }
             } else {
-                Box(modifier = Modifier.size(1.dp))
+                Spacer(modifier = Modifier.width(1.dp))
             }
         }
 
@@ -2339,108 +2505,18 @@ fun BudgetsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        // A. Header section for Total spending (switchable Weekly vs Monthly)
-        val budgetViewPeriod by viewModel.budgetViewPeriod.collectAsStateWithLifecycle()
-
-        val bounds = if (budgetViewPeriod == "Weekly") {
-            viewModel.getWeeklyPeriodBounds(System.currentTimeMillis(), startOfWeek)
-        } else {
-            viewModel.getMonthlyPeriodBounds(System.currentTimeMillis(), finMonthDay)
-        }
-
-        // Spesa totale corrente nel periodo selezionato (escludendo i giroconti)
-        val currentExpensesOnly = transactions.filter {
-            it.type == "Expense" && it.timestamp in bounds.first..bounds.second
-        }.sumOf { it.amount }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(24.dp)
-                )
-                .padding(vertical = 16.dp, horizontal = 12.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = {
-                        val nextPeriod = if (budgetViewPeriod == "Monthly") "Weekly" else "Monthly"
-                        viewModel.setBudgetViewPeriod(nextPeriod)
-                    },
-                    modifier = Modifier.testTag("budget_prev_period_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ChevronLeft,
-                        contentDescription = "Precedente",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    // Subtitle filled badge
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = if (budgetViewPeriod == "Weekly") "SPESE SETTIMANALI CORRENTI".t(language) else "SPESE MENSILI CORRENTI".t(language),
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
-                    // Amount text - Punto 9 (Responsive font)
-                    ResponsiveText(
-                        text = currentExpensesOnly.formatEuro(),
-                        style = MaterialTheme.typography.displayLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-1.5).sp
-                        ),
-                        color = MaterialTheme.colorScheme.primary,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-                    )
-
-                    // Subtext / description
-                    Text(
-                        text = "Giroconti esclusi".t(language),
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-
-                IconButton(
-                    onClick = {
-                        val nextPeriod = if (budgetViewPeriod == "Monthly") "Weekly" else "Monthly"
-                        viewModel.setBudgetViewPeriod(nextPeriod)
-                    },
-                    modifier = Modifier.testTag("budget_next_period_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = "Successivo",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
+        val locale = remember(language) {
+            when (language) {
+                "English" -> Locale.ENGLISH
+                "Español" -> Locale("es")
+                "Català" -> Locale("ca")
+                "Français" -> Locale.FRENCH
+                "Deutsch" -> Locale.GERMAN
+                else -> Locale.ITALIAN
             }
         }
 
-        // ⭐ Legenda star button (Point 9)
+        // ⭐ Legenda star button
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -2454,27 +2530,74 @@ fun BudgetsScreen(
             ) {
                 Text("⭐", fontSize = 24.sp)
                 Text(
-                    text = "Legenda: Clicca sulla stellina per fissare quel budget come \"Budget in Evidenza\" nella Home dell'applicazione.".t(language),
+                    text = "Clicca sulla stellina per fissare quel budget in evidenza nella schermata Home dell'applicazione.".t(language),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
 
-        // B. BUDGET TOTALI (per conto o cumulativo)
+        // 📅 Legenda Calcolo Periodi Personalizzati (compatta e salvaspazio)
+        val isNotMonday = !startOfWeek.equals("Lunedì", ignoreCase = true) && !startOfWeek.equals("Monday", ignoreCase = true)
+        if (isNotMonday || finMonthDay != 1) {
+            val monthlyBounds = viewModel.getMonthlyPeriodBounds(System.currentTimeMillis(), finMonthDay)
+            val sdfDate = SimpleDateFormat("d MMM", locale)
+            val startDateStr = sdfDate.format(Date(monthlyBounds.first))
+            val endDateStr = sdfDate.format(Date(monthlyBounds.second))
+            val prevDay = when (startOfWeek) {
+                "Domenica", "Sunday" -> "Sabato".t(language)
+                "Sabato", "Saturday" -> "Venerdì".t(language)
+                "Venerdì", "Friday" -> "Giovedì".t(language)
+                else -> "Domenica".t(language)
+            }
+
+            val legendText = buildString {
+                if (isNotMonday) {
+                    append("${"Settimana:".t(language)} ${startOfWeek.t(language)}–$prevDay")
+                }
+                if (isNotMonday && finMonthDay != 1) append(" • ")
+                if (finMonthDay != 1) {
+                    append("${"Mese fiscale:".t(language)} $startDateStr–$endDateStr")
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("📅", fontSize = 14.sp)
+                    Text(
+                        text = legendText,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        // B. BUDGET PER CONTO
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Budget Totali".t(language),
+                text = "Budget per Conto".t(language),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
             )
             TextButton(onClick = { showAddTotalBudgetDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Imposta".t(language))
+                Text("Nuovo".t(language))
             }
         }
 
@@ -2498,11 +2621,13 @@ fun BudgetsScreen(
                 val bounds = viewModel.getBudgetBounds(budget, System.currentTimeMillis(), startOfWeek, finMonthDay)
                 val isExpired = !budget.autoRenew && System.currentTimeMillis() > bounds.second
 
+                val acc = if (budget.accountId != null) accounts.find { it.id == budget.accountId } else null
                 val accountName = if (budget.accountId == null) {
-                    "Tutti i Conti Insieme".t(language)
+                    "Tutti i Conti".t(language)
                 } else {
-                    accounts.find { it.id == budget.accountId }?.name ?: "Conto Eliminato".t(language)
+                    acc?.name ?: "Conto Eliminato".t(language)
                 }
+                val accountEmoji = getAccountEmoji(acc)
 
                 val periodText = when (budget.period) {
                     "Daily" -> "Giornaliero".t(language)
@@ -2510,6 +2635,7 @@ fun BudgetsScreen(
                     "Monthly" -> "Mensile".t(language)
                     else -> "Mensile".t(language)
                 }
+                val periodColor = getPeriodColor(budget.period)
 
                 val percentage = if (budget.amountLimit > 0) (spending / budget.amountLimit) else 0.0
                 val progressColor = when {
@@ -2557,16 +2683,23 @@ fun BudgetsScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = if (budget.accountId == null) "🌍" else "💳",
+                                        text = accountEmoji,
                                         fontSize = 18.sp
                                     )
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "$accountName ($periodText)",
+                                        text = accountName,
                                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = periodText,
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = periodColor,
+                                        maxLines = 1
                                     )
                                     if (isExpired) {
                                         Text(
@@ -2787,6 +2920,7 @@ fun BudgetsScreen(
                         "Monthly" -> "Mensile".t(language)
                         else -> "Mensile".t(language)
                     }
+                    val periodColor = getPeriodColor(budget.period)
 
                     val isExpanded = expandedBudgetId == budget.id
 
@@ -2833,10 +2967,17 @@ fun BudgetsScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         val displayName = if (subCat != null) "${cat.name} > ${subCat.name}" else cat.name
                                         Text(
-                                            text = "$displayName ($periodText)",
+                                            text = displayName,
                                             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = periodText,
+                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                            color = periodColor,
+                                            maxLines = 1
                                         )
                                         if (isExpired) {
                                             Text(
@@ -3037,20 +3178,16 @@ fun GoalsScreen(
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
     val goals by viewModel.savingsGoals.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
-
     val totalSavedAll by viewModel.totalAccantonato.collectAsStateWithLifecycle()
-    val totalAllocatedToGoals by viewModel.totalAllocatedToGoals.collectAsStateWithLifecycle()
-    val unallocatedSavings by viewModel.unallocatedSavings.collectAsStateWithLifecycle()
-    val totalSavedForGoalsByAccount by viewModel.totalSavedForGoalsByAccount.collectAsStateWithLifecycle()
 
     var showAddGoalDialog by remember { mutableStateOf(false) }
     var showAccantonaDialog by remember { mutableStateOf(false) }
     var showRilasciaDialog by remember { mutableStateOf(false) }
 
-    var selectedGoalForAllocating by remember { mutableStateOf<SavingsGoal?>(null) }
-    var selectedGoalForDeallocating by remember { mutableStateOf<SavingsGoal?>(null) }
-    var selectedGoalForCompleting by remember { mutableStateOf<SavingsGoal?>(null) }
+    var editingGoal by remember { mutableStateOf<SavingsGoal?>(null) }
+    var completingGoal by remember { mutableStateOf<SavingsGoal?>(null) }
     var expandedGoalId by remember { mutableStateOf<Int?>(null) }
+    var isPiggyExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -3059,32 +3196,6 @@ fun GoalsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        // A. Title Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "I tuoi Obiettivi".t(language),
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                )
-                Text(
-                    text = "Gestisci i tuoi risparmi virtuali".t(language),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.Gray
-                )
-            }
-            Button(
-                onClick = { showAddGoalDialog = true },
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Text("Nuovo".t(language))
-            }
-        }
-
         // B. SALVADANAIO VIRTUALE Card (Top Section)
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -3118,58 +3229,72 @@ fun GoalsScreen(
                             color = MaterialTheme.colorScheme.tertiary
                         )
                         Text(
-                            text = "Fondi totali accantonati dai tuoi conti".t(language),
+                            text = "Saldo Totale Accantonato".t(language),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.Gray
                         )
                     }
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
+                Text(
+                    text = totalSavedAll.formatEuro(),
+                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+
+                // Breakdown per account (collapsible)
+                val activeSavedAccounts = accounts.filter { it.savedAmount > 0.0 }
+                if (activeSavedAccounts.isNotEmpty()) {
+                    Divider(color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isPiggyExpanded = !isPiggyExpanded },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = totalSavedAll.formatEuro(),
-                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.tertiary
+                            text = "Accantonamenti per conto".t(language) + if (activeSavedAccounts.size > 1) " (${activeSavedAccounts.size})" else "",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Text(
-                            text = "Saldo Totale".t(language),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.Gray
+                        Icon(
+                            imageVector = if (isPiggyExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = "Espandi",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = totalAllocatedToGoals.formatEuro(),
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "Vincolati".t(language),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.Gray
-                            )
-                        }
-
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = unallocatedSavings.formatEuro(),
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                            Text(
-                                text = "Non Assegnati".t(language),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.Gray
-                            )
+                    if (isPiggyExpanded) {
+                        activeSavedAccounts.forEach { acc ->
+                            val accEmoji = getAccountEmoji(acc)
+                            val ratio = if (totalSavedAll > 0) acc.savedAmount / totalSavedAll else 0.0
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "$accEmoji ${acc.name}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                                    )
+                                    Text(
+                                        text = "${acc.savedAmount.formatEuro()} (${(ratio * 100).toInt()}%)",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.tertiary
+                                    )
+                                }
+                                LinearProgressIndicator(
+                                    progress = { ratio.toFloat().coerceIn(0f, 1f) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(CircleShape),
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -3198,12 +3323,39 @@ fun GoalsScreen(
                     ) {
                         Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Rilascia".t(language))
+                        Text("Svincola".t(language))
                     }
                 }
             }
         }
 
+        // A. Title Header (Moved below Salvadanaio card)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "I tuoi Obiettivi".t(language),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = "Gestisci i tuoi risparmi virtuali".t(language),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.Gray
+                )
+            }
+            Button(
+                onClick = { showAddGoalDialog = true },
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Text("Nuovo".t(language))
+            }
+        }
+
+        // C. Individual Goals List Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -3214,31 +3366,8 @@ fun GoalsScreen(
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.outline
             )
-            
-            if (goals.any { it.currentAmount > 0.0 }) {
-                TextButton(
-                    onClick = { viewModel.clearAllGoalsAllocations() },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = "Svincola tutti i fondi",
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Svincola tutto".t(language),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
         }
 
-        // C. Individual Goals List
         if (goals.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -3250,9 +3379,24 @@ fun GoalsScreen(
             }
         } else {
             goals.forEach { goal ->
-                val progress = if (goal.targetAmount > 0) goal.currentAmount / goal.targetAmount else 0.0
+                val linkedAcc = accounts.find { it.id == goal.accountId }
+                val currentSavedForAccount = linkedAcc?.savedAmount ?: 0.0
+                val progress = if (goal.targetAmount > 0) currentSavedForAccount / goal.targetAmount else 0.0
                 val progressPercent = (progress * 100).toInt()
+                val isCompleted = currentSavedForAccount >= goal.targetAmount
                 val isExpanded = expandedGoalId == goal.id
+
+                val sdfGoalDate = remember { SimpleDateFormat("dd/MM/yyyy", Locale.ITALIAN) }
+                val isGoalExpired = remember(goal.deadline) {
+                    if (goal.deadline.isBlank()) false else {
+                        try {
+                            val parsed = sdfGoalDate.parse(goal.deadline)
+                            parsed != null && System.currentTimeMillis() >= parsed.time
+                        } catch (_: Exception) {
+                            false
+                        }
+                    }
+                }
 
                 Card(
                     modifier = Modifier
@@ -3264,14 +3408,13 @@ fun GoalsScreen(
                     ),
                     border = BorderStroke(
                         width = 1.dp,
-                        color = if (isExpanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
+                        color = if (isGoalExpired) MaterialTheme.colorScheme.error.copy(alpha = 0.5f) else if (isCompleted) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f) else if (isExpanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
                     )
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Header info row (Compact)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -3289,48 +3432,69 @@ fun GoalsScreen(
                                         .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (!goal.iconEmoji.isNullOrBlank()) {
-                                        Text(goal.iconEmoji, fontSize = 18.sp)
-                                    } else {
-                                        Icon(
-                                            Icons.Default.Savings,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.tertiary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
+                                    Text(goal.iconEmoji.ifBlank { "🐷" }, fontSize = 18.sp)
                                 }
-                                Column {
-                                    Text(
-                                        goal.name,
-                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
-                                    )
-                                    if (!isExpanded) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
                                         Text(
-                                            goal.deadline,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color.Gray
+                                            goal.name,
+                                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
+                                        if (isGoalExpired) {
+                                            Text(
+                                                "SCADUTO ⏱️".t(language),
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
+                                    val accName = linkedAcc?.name ?: "Conto non associato".t(language)
+                                    Text(
+                                        text = if (goal.deadline.isBlank()) accName else "$accName • ${goal.deadline}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isGoalExpired) MaterialTheme.colorScheme.error else Color.Gray,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
 
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    goal.currentAmount.formatEuro(),
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.primary)
-                                )
-                                Text(
-                                    "${"su".t(language)} ${goal.targetAmount.formatEuro()}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.Gray
-                                )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        goal.targetAmount.formatEuro(),
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge.copy(color = if (isCompleted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary)
+                                    )
+                                    Text(
+                                        "Target".t(language),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.Gray
+                                    )
+                                }
+
+                                if (isCompleted) {
+                                    IconButton(
+                                        onClick = { completingGoal = goal },
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .background(MaterialTheme.colorScheme.tertiaryContainer, CircleShape)
+                                    ) {
+                                        Text("🪙", fontSize = 20.sp)
+                                    }
+                                }
                             }
                         }
 
                         if (!isExpanded) {
-                            // Thin progress line when collapsed
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -3340,107 +3504,95 @@ fun GoalsScreen(
                                     progress = { progress.toFloat().coerceIn(0f, 1f) },
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(4.dp)
+                                        .height(6.dp)
                                         .clip(CircleShape),
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = if (isCompleted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
                                     text = "$progressPercent%",
                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = if (isCompleted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
                                 )
                             }
                         } else {
-                            // Expanded view details
-                            Text(
-                                text = "${"Scadenza:".t(language)} ${goal.deadline}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
-                            )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "$progressPercent% ${"completato".t(language)}",
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            }
-
-                            // Standard progress bar
                             LinearProgressIndicator(
                                 progress = { progress.toFloat().coerceIn(0f, 1f) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(8.dp)
                                     .clip(CircleShape),
-                                color = MaterialTheme.colorScheme.primary,
+                                color = if (isCompleted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
 
-                            Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
-
-                            // Actions Row (Assegna, Rimuovi, Completa, Elimina)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Outlined "+" button for assigning funds
-                                OutlinedButton(
-                                    onClick = { selectedGoalForAllocating = goal },
+                            if (isGoalExpired) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
                                     shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(32.dp),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = "Assegna fondi", modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Assegna".t(language), fontSize = 11.sp)
-                                }
-
-                                // Outlined "-" button for removing funds
-                                if (goal.currentAmount > 0.0) {
-                                    OutlinedButton(
-                                        onClick = { selectedGoalForDeallocating = goal },
-                                        shape = RoundedCornerShape(12.dp),
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                        modifier = Modifier.height(32.dp),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    ) {
-                                        Icon(Icons.Default.Remove, contentDescription = "Rimuovi fondi", modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Rimuovi".t(language), fontSize = 11.sp)
+                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(
+                                            text = "Obiettivo Scaduto! ⏱️ La data limite è stata superata.".t(language),
+                                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                        Text(
+                                            text = "Suggerimento: puoi modificare o rimuovere la data di scadenza oppure eliminare l'obiettivo.".t(language),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            OutlinedButton(
+                                                onClick = { editingGoal = goal },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Text("Modifica Data".t(language), fontSize = 11.sp)
+                                            }
+                                            OutlinedButton(
+                                                onClick = { viewModel.updateSavingsGoal(goal.copy(deadline = "")) },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Text("Rimuovi Scadenza".t(language), fontSize = 11.sp)
+                                            }
+                                        }
                                     }
                                 }
+                            }
 
-                                Spacer(modifier = Modifier.weight(1f))
+                            Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
 
-                                // "Completa" Button
-                                Button(
-                                    onClick = { selectedGoalForCompleting = goal },
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedButton(
+                                    onClick = { editingGoal = goal },
                                     shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(32.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary, contentColor = MaterialTheme.colorScheme.onSecondary)
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
-                                    Icon(Icons.Default.Check, contentDescription = "Completa", modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Completa".t(language), fontSize = 11.sp)
+                                    Text("Modifica".t(language), fontSize = 12.sp)
                                 }
 
-                                // "Elimina" Button (trash icon button)
+                                Spacer(modifier = Modifier.width(8.dp))
+
                                 IconButton(
                                     onClick = { viewModel.deleteSavingsGoal(goal) },
                                     modifier = Modifier
-                                        .size(32.dp)
+                                        .size(36.dp)
                                         .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f), CircleShape)
                                 ) {
                                     Icon(
@@ -3459,9 +3611,19 @@ fun GoalsScreen(
     }
 
     if (showAddGoalDialog) {
-        AddSavingsGoalDialog(
+        AddOrEditSavingsGoalDialog(
+            accounts = accounts,
             viewModel = viewModel,
             onDismiss = { showAddGoalDialog = false }
+        )
+    }
+
+    if (editingGoal != null) {
+        AddOrEditSavingsGoalDialog(
+            goal = editingGoal,
+            accounts = accounts,
+            viewModel = viewModel,
+            onDismiss = { editingGoal = null }
         )
     }
 
@@ -3476,36 +3638,17 @@ fun GoalsScreen(
     if (showRilasciaDialog) {
         RilasciaFondiDialog(
             accounts = accounts,
-            savedForGoalsMap = totalSavedForGoalsByAccount,
-            unallocatedAmount = unallocatedSavings,
             viewModel = viewModel,
             onDismiss = { showRilasciaDialog = false }
         )
     }
 
-    if (selectedGoalForAllocating != null) {
-        AssegnaFondiAObiettivoDialog(
-            goal = selectedGoalForAllocating!!,
-            unallocatedAmount = unallocatedSavings,
-            viewModel = viewModel,
-            onDismiss = { selectedGoalForAllocating = null }
-        )
-    }
-
-    if (selectedGoalForDeallocating != null) {
-        RimuoviFondiDaObiettivoDialog(
-            goal = selectedGoalForDeallocating!!,
-            viewModel = viewModel,
-            onDismiss = { selectedGoalForDeallocating = null }
-        )
-    }
-
-    if (selectedGoalForCompleting != null) {
-        CompletaObiettivoDialog(
-            goal = selectedGoalForCompleting!!,
+    if (completingGoal != null) {
+        CompleteGoalExpenseDialog(
+            goal = completingGoal!!,
             accounts = accounts,
             viewModel = viewModel,
-            onDismiss = { selectedGoalForCompleting = null }
+            onDismiss = { completingGoal = null }
         )
     }
 }
@@ -3954,6 +4097,13 @@ fun SettingsScreen(
     viewModel: WalletViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        viewModel.setPushNotificationsEnabled(isGranted)
+    }
+
     val startOfWeek by viewModel.startOfWeek.collectAsStateWithLifecycle()
     val finMonthDay by viewModel.financialMonthStartDay.collectAsStateWithLifecycle()
     val pushNotif by viewModel.pushNotificationsEnabled.collectAsStateWithLifecycle()
@@ -4133,7 +4283,16 @@ fun SettingsScreen(
                     Text("Notifiche Push".t(language), fontWeight = FontWeight.Bold)
                     Text("Rimani aggiornato sulle tue spese in tempo reale.".t(language), style = MaterialTheme.typography.labelMedium, color = Color.Gray)
                 }
-                Switch(checked = pushNotif, onCheckedChange = { viewModel.setPushNotificationsEnabled(it) })
+                Switch(
+                    checked = pushNotif,
+                    onCheckedChange = { checked ->
+                        if (checked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            viewModel.setPushNotificationsEnabled(checked)
+                        }
+                    }
+                )
             }
         }
 
@@ -4532,8 +4691,9 @@ fun AddTransactionDialog(
 ) {
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val wordFrequencies by viewModel.noteWordFrequencies.collectAsStateWithLifecycle()
 
     var title by remember { mutableStateOf("") }
     var amountStr by remember { mutableStateOf("") }
@@ -4655,15 +4815,18 @@ fun AddTransactionDialog(
                                 calendar.get(java.util.Calendar.MONTH),
                                 calendar.get(java.util.Calendar.DAY_OF_MONTH)
                             )
+                            datePickerDialog.datePicker.maxDate = System.currentTimeMillis()
                             datePickerDialog.show()
                         }
                 )
 
-                OutlinedTextField(
+                NoteTextFieldWithAutocomplete(
                     value = title,
-                    onValueChange = { if (it.length <= 22) title = it },
-                    label = { Text("Nota (massimo 22 caratteri)".t(language)) },
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { title = it },
+                    wordFrequencies = wordFrequencies,
+                    label = "Nota (massimo 22 caratteri)".t(language),
+                    language = language,
+                    maxChars = 22
                 )
 
                 // Account sorgente
@@ -5055,7 +5218,7 @@ fun AdjustBudgetDialog(
                         if (cat != null) {
                             selectedCategoryId = cat.id
                             val limitVal = budgets.find { it.categoryId == cat.id }?.amountLimit ?: 0.0
-                            limitStr = if (limitVal > 0.0) limitVal.toString() else ""
+                            limitStr = if (limitVal > 0.0) limitVal.formatForInput() else ""
                         }
                     }
                 )
@@ -5102,24 +5265,49 @@ fun AdjustBudgetDialog(
 }
 
 @Composable
-fun AddSavingsGoalDialog(
+fun AddOrEditSavingsGoalDialog(
+    goal: SavingsGoal? = null,
+    accounts: List<Account>,
     viewModel: WalletViewModel,
     onDismiss: () -> Unit
 ) {
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
-    var name by remember { mutableStateOf("") }
-    var targetStr by remember { mutableStateOf("") }
-    var deadline by remember { mutableStateOf("") }
-    var iconEmoji by remember { mutableStateOf("🎯") }
+    val context = LocalContext.current
+    val calendar = remember { Calendar.getInstance() }
+    val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy", Locale.ITALIAN) }
+
+    var name by remember { mutableStateOf(goal?.name ?: "") }
+    var targetStr by remember { mutableStateOf(goal?.targetAmount?.formatForInput() ?: "") }
+    var deadline by remember { mutableStateOf(goal?.deadline ?: "") }
+    var iconEmoji by remember { mutableStateOf(goal?.iconEmoji?.ifBlank { "🐷" } ?: "🐷") }
+    var selectedAccountId by remember { mutableStateOf(goal?.accountId ?: accounts.firstOrNull()?.id ?: 0) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val isEmojiValid = isValidSingleEmoji(iconEmoji)
+    val openDatePicker = {
+        DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                calendar.set(Calendar.YEAR, year)
+                calendar.set(Calendar.MONTH, month)
+                calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                deadline = dateFormatter.format(calendar.time)
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    val finalEmoji = if (iconEmoji.isBlank()) "🐷" else iconEmoji.trim()
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nuovo Obiettivo".t(language)) },
+        title = { Text(if (goal == null) "Nuovo Obiettivo".t(language) else "Modifica Obiettivo".t(language)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 if (errorMessage != null) {
                     Text(
                         text = errorMessage!!,
@@ -5131,12 +5319,11 @@ fun AddSavingsGoalDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { 
-                        if (it.length <= 22 && !it.contains("\n")) name = it
+                        if (it.length <= 30 && !it.contains("\n")) name = it
                         errorMessage = null
                     },
                     label = { Text("Nome Obiettivo".t(language)) },
                     singleLine = true,
-                    maxLines = 1,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -5151,32 +5338,70 @@ fun AddSavingsGoalDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                OutlinedTextField(
-                    value = deadline,
-                    onValueChange = { deadline = it },
-                    label = { Text("Scadenza (es: Estate 2024)".t(language)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Date picker for deadline
+                Box(modifier = Modifier.fillMaxWidth().clickable { openDatePicker() }) {
+                    OutlinedTextField(
+                        value = deadline,
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = false,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        label = { Text("Scadenza (opzionale)".t(language)) },
+                        trailingIcon = {
+                            IconButton(onClick = { openDatePicker() }) {
+                                Icon(Icons.Default.DateRange, contentDescription = "Seleziona Data")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (deadline.isNotBlank()) {
+                    TextButton(
+                        onClick = { deadline = "" },
+                        modifier = Modifier.align(Alignment.End),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Rimuovi scadenza (indefinita)".t(language), fontSize = 12.sp)
+                    }
+                }
 
                 OutlinedTextField(
                     value = iconEmoji,
                     onValueChange = { 
-                        iconEmoji = it
+                        if (it.length <= 4) iconEmoji = it
                         errorMessage = null
                     },
-                    label = { Text("Emoji Icona".t(language)) },
-                    isError = !isEmojiValid,
+                    label = { Text("Simbolo Emoji (lascia vuoto per 🐷)".t(language)) },
+                    isError = iconEmoji.isNotBlank() && !isValidSingleEmoji(finalEmoji),
                     supportingText = {
-                        if (!isEmojiValid) {
+                        if (iconEmoji.isNotBlank() && !isValidSingleEmoji(finalEmoji)) {
                             Text("Inserisci un singolo carattere emoji valido".t(language), color = MaterialTheme.colorScheme.error)
-                        } else {
-                            Text("Carattere emoji valido".t(language))
                         }
                     },
                     singleLine = true,
-                    maxLines = 1,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                if (accounts.size > 1) {
+                    Text("Conto da monitorare:".t(language))
+                    val selectedAcc = accounts.find { it.id == selectedAccountId } ?: accounts.firstOrNull()
+                    BudgieDropdown(
+                        label = "Seleziona Conto".t(language),
+                        options = accounts,
+                        selectedOption = selectedAcc,
+                        optionToString = { acc -> acc?.let { "${getAccountEmoji(it)} ${it.name}" } ?: "" },
+                        onOptionSelected = { acc ->
+                            if (acc != null) selectedAccountId = acc.id
+                        }
+                    )
+                } else {
+                    selectedAccountId = accounts.firstOrNull()?.id ?: 0
+                }
             }
         },
         confirmButton = {
@@ -5186,18 +5411,29 @@ fun AddSavingsGoalDialog(
                     when {
                         name.isBlank() -> errorMessage = "Inserisci il nome dell'obiettivo.".t(language)
                         target <= 0.0 -> errorMessage = "Inserisci una cifra target valida maggiore di zero.".t(language)
-                        !isEmojiValid -> errorMessage = "Inserisci un'emoji valida.".t(language)
+                        !isValidSingleEmoji(finalEmoji) -> errorMessage = "Inserisci un'emoji valida (singolo carattere).".t(language)
+                        selectedAccountId <= 0 -> errorMessage = "Seleziona un conto da monitorare.".t(language)
                         else -> {
                             try {
-                                viewModel.addSavingsGoal(name, target, deadline, iconEmoji)
+                                if (goal == null) {
+                                    viewModel.addSavingsGoal(name, target, deadline, finalEmoji, selectedAccountId)
+                                } else {
+                                    viewModel.updateSavingsGoal(goal.copy(
+                                        name = name,
+                                        targetAmount = target,
+                                        deadline = deadline,
+                                        iconEmoji = finalEmoji,
+                                        accountId = selectedAccountId
+                                    ))
+                                }
                                 onDismiss()
                             } catch (e: Exception) {
-                                errorMessage = "Errore durante la creazione: ${e.localizedMessage}".t(language)
+                                errorMessage = "Errore: ${e.localizedMessage}".t(language)
                             }
                         }
                     }
                 },
-                enabled = name.isNotBlank() && targetStr.isNotBlank() && isEmojiValid
+                enabled = name.isNotBlank() && targetStr.isNotBlank()
             ) {
                 Text("Salva".t(language))
             }
@@ -5217,9 +5453,14 @@ fun AccantonaFondiDialog(
     onDismiss: () -> Unit
 ) {
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
-    var amountStr by remember { mutableStateOf("") }
     var selectedAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: 0) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val selectedAcc = accounts.find { it.id == selectedAccountId } ?: accounts.firstOrNull()
+    val maxAvailable = maxOf(0.0, (selectedAcc?.balance ?: 0.0) - (selectedAcc?.savedAmount ?: 0.0))
+
+    var sliderPercent by remember(selectedAccountId) { mutableStateOf(0f) }
+    var amountStr by remember(selectedAccountId) { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -5234,43 +5475,88 @@ fun AccantonaFondiDialog(
                     )
                 }
 
-                Text("Preleva fittiziamente del denaro da un tuo conto per metterlo nel Salvadanaio Virtuale.".t(language))
+                Text("Accantona una quota di denaro dal tuo conto nel Salvadanaio Virtuale.".t(language))
+
+                if (accounts.size > 1) {
+                    Text("Seleziona conto di origine:".t(language))
+                    BudgieDropdown(
+                        label = "Seleziona Conto".t(language),
+                        options = accounts,
+                        selectedOption = selectedAcc,
+                        optionToString = { acc -> 
+                            if (acc == null) "" else "${getAccountEmoji(acc)} ${acc.name}"
+                        },
+                        onOptionSelected = { acc ->
+                            if (acc != null) {
+                                selectedAccountId = acc.id
+                                sliderPercent = 0f
+                                amountStr = ""
+                                errorMessage = null
+                            }
+                        }
+                    )
+                } else {
+                    selectedAccountId = accounts.firstOrNull()?.id ?: 0
+                }
+
+                // Dettaglio disponibilità subito sotto la selezione del conto
+                Text(
+                    text = "${"Disponibile sul conto:".t(language)} ${maxAvailable.formatEuro()}",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                // Slider per accantonamento (0% a 100%) con valori interi
+                if (maxAvailable > 0) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Percentuale:".t(language), style = MaterialTheme.typography.bodySmall)
+                            Text("${sliderPercent.toInt()}%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                        }
+                        Slider(
+                            value = sliderPercent,
+                            onValueChange = { newVal ->
+                                val percentInt = round(newVal).toInt()
+                                sliderPercent = percentInt.toFloat()
+                                val calculatedAmount = round(maxAvailable * percentInt / 100.0).toInt()
+                                amountStr = if (calculatedAmount > 0) calculatedAmount.toString() else ""
+                                errorMessage = null
+                            },
+                            valueRange = 0f..100f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
 
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { 
-                        amountStr = it 
+                    onValueChange = { newVal ->
+                        amountStr = newVal
                         errorMessage = null
+                        val parsed = newVal.replace(',', '.').toDoubleOrNull() ?: 0.0
+                        if (maxAvailable > 0) {
+                            sliderPercent = ((parsed / maxAvailable) * 100.0).toFloat().coerceIn(0f, 100f)
+                        }
                     },
                     label = { Text("Quota da accantonare (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
-
-                Text("Seleziona conto di origine:".t(language))
-                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    accounts.forEach { acc ->
-                        FilterChip(
-                            selected = selectedAccountId == acc.id,
-                            onClick = { selectedAccountId = acc.id },
-                            label = { Text("${acc.name} (${acc.balance.formatEuro()})") },
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
-                    }
-                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
-                    val activeAccId = if (accounts.any { it.id == selectedAccountId }) selectedAccountId else (accounts.firstOrNull()?.id ?: 0)
                     when {
                         amount <= 0.0 -> errorMessage = "Inserisci una quota valida maggiore di zero.".t(language)
-                        activeAccId <= 0 -> errorMessage = "Seleziona un conto valido.".t(language)
+                        amount > maxAvailable -> errorMessage = "L'importo supera il saldo disponibile del conto (pari a ${maxAvailable.formatAmount()}, dedotti gli accantonamenti già effettuati).".t(language)
                         else -> {
                             try {
-                                viewModel.addVirtualSaving(amount, activeAccId)
+                                viewModel.accantonaToSavings(selectedAccountId, amount)
                                 onDismiss()
                             } catch (e: Exception) {
                                 errorMessage = "Errore durante l'accantonamento: ${e.localizedMessage}".t(language)
@@ -5293,22 +5579,23 @@ fun AccantonaFondiDialog(
 @Composable
 fun RilasciaFondiDialog(
     accounts: List<Account>,
-    savedForGoalsMap: Map<Int, Double>,
-    unallocatedAmount: Double,
     viewModel: WalletViewModel,
     onDismiss: () -> Unit
 ) {
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
-    var amountStr by remember { mutableStateOf("") }
-    var selectedAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: 0) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val savedAccounts = accounts.filter { it.savedAmount > 0.0 }
+    var selectedAccountId by remember { mutableStateOf(savedAccounts.firstOrNull()?.id ?: accounts.firstOrNull()?.id ?: 0) }
     
-    val savedInSelectedAcc = savedForGoalsMap[selectedAccountId] ?: 0.0
-    val maxReleaseLimit = minOf(savedInSelectedAcc, unallocatedAmount)
+    val selectedAcc = accounts.find { it.id == selectedAccountId } ?: savedAccounts.firstOrNull()
+    val maxSaved = selectedAcc?.savedAmount ?: 0.0
+
+    var sliderPercent by remember(selectedAccountId) { mutableStateOf(100f) }
+    var amountStr by remember(selectedAccountId) { mutableStateOf(maxSaved.toInt().toString()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rilascia Fondi".t(language)) },
+        title = { Text("Svincola Fondi".t(language)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (errorMessage != null) {
@@ -5319,40 +5606,247 @@ fun RilasciaFondiDialog(
                     )
                 }
 
-                Text("Preleva fondi dal Salvadanaio Virtuale per riallinearli come disponibili nel tuo conto.".t(language))
+                if (savedAccounts.isEmpty()) {
+                    Text("Nessun fondo accantonato disponibile per lo svincolo.".t(language), color = Color.Gray)
+                } else {
+                    if (savedAccounts.size > 1) {
+                        Text("Seleziona il conto da cui svincolare i fondi:".t(language))
+                        BudgieDropdown(
+                            label = "Seleziona Conto".t(language),
+                            options = savedAccounts,
+                            selectedOption = selectedAcc,
+                            optionToString = { acc -> 
+                                if (acc == null) "" else "${getAccountEmoji(acc)} ${acc.name}"
+                            },
+                            onOptionSelected = { acc ->
+                                if (acc != null) {
+                                    selectedAccountId = acc.id
+                                    sliderPercent = 100f
+                                    amountStr = acc.savedAmount.toInt().toString()
+                                    errorMessage = null
+                                }
+                            }
+                        )
+                    } else {
+                        selectedAccountId = savedAccounts.first().id
+                    }
 
-                if (maxReleaseLimit < savedInSelectedAcc) {
+                    Text("${"Accantonato su questo conto:".t(language)} ${maxSaved.formatEuro()}", fontWeight = FontWeight.Bold)
+
+                    // Slider (0% to 100%) - integer amounts
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Percentuale:".t(language), style = MaterialTheme.typography.bodySmall)
+                            Text("${sliderPercent.toInt()}%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                        }
+                        Slider(
+                            value = sliderPercent,
+                            onValueChange = { newVal ->
+                                val percentInt = round(newVal).toInt()
+                                sliderPercent = percentInt.toFloat()
+                                val calculatedAmount = round(maxSaved * percentInt / 100.0).toInt()
+                                amountStr = calculatedAmount.toString()
+                                errorMessage = null
+                            },
+                            valueRange = 0f..100f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = amountStr,
+                        onValueChange = { newVal ->
+                            amountStr = newVal
+                            errorMessage = null
+                            val parsed = newVal.replace(',', '.').toDoubleOrNull() ?: 0.0
+                            if (maxSaved > 0) {
+                                sliderPercent = ((parsed / maxSaved) * 100.0).toFloat().coerceIn(0f, 100f)
+                            }
+                        },
+                        label = { Text("Importo esatto (€)".t(language)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (savedAccounts.isNotEmpty()) {
+                Button(
+                    onClick = {
+                        val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                        when {
+                            amount <= 0.0 -> errorMessage = "Inserisci un importo valido maggiore di zero.".t(language)
+                            amount > maxSaved -> errorMessage = "L'importo supera i fondi accantonati su questo conto.".t(language)
+                            else -> {
+                                try {
+                                    viewModel.releaseSavingsFromAccount(selectedAccountId, amount)
+                                    onDismiss()
+                                } catch (e: Exception) {
+                                    errorMessage = "Errore durante lo svincolo: ${e.localizedMessage}".t(language)
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text("Svincola".t(language))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annulla".t(language))
+            }
+        }
+    )
+}
+
+@Composable
+fun CompleteGoalExpenseDialog(
+    goal: SavingsGoal,
+    accounts: List<Account>,
+    viewModel: WalletViewModel,
+    onDismiss: () -> Unit
+) {
+    val language by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    val expenseCats = categories.filter { it.parentCategoryId == null && it.type == "Expense" }
+
+    val linkedAcc = accounts.find { it.id == goal.accountId }
+    val linkedAccName = linkedAcc?.name ?: "Conto".t(language)
+    val defaultAmount = minOf(goal.targetAmount, linkedAcc?.savedAmount ?: goal.targetAmount)
+
+    var amountStr by remember { mutableStateOf(defaultAmount.formatForInput()) }
+    var selectedCategoryId by remember { mutableStateOf<Int?>(expenseCats.firstOrNull()?.id) }
+    var selectedSubCategoryId by remember { mutableStateOf<Int?>(null) }
+    var note by remember { mutableStateOf(goal.name) }
+    var selectedTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val calendar = remember { Calendar.getInstance() }
+    val sdf = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALIAN) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("🎉 Obiettivo Raggiunto!".t(language)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (errorMessage != null) {
                     Text(
-                        text = "Nota: hai dei fondi vincolati ad obiettivi individuali. Per rilasciare più di".t(language) + " ${maxReleaseLimit.formatEuro()}, " + "rimuovi prima i fondi dagli obiettivi.".t(language),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
 
-                val parsedAmount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
-                val isError = parsedAmount > maxReleaseLimit
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("${goal.iconEmoji} ${goal.name}", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                        Text("Complimenti! Puoi registrare l'acquisto reale usando i fondi accantonati sul conto '$linkedAccName'.".t(language), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
 
                 OutlinedTextField(
                     value = amountStr,
-                    onValueChange = { 
-                        amountStr = it 
-                        errorMessage = null
-                    },
-                    label = { Text("Quota da rilasciare (€) - max".t(language) + " ${maxReleaseLimit.formatEuro()}") },
+                    onValueChange = { amountStr = it; errorMessage = null },
+                    label = { Text("Importo Spesa (€)".t(language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = isError,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Text("Seleziona conto di destinazione:".t(language))
-                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    accounts.forEach { acc ->
-                        val savedAmount = savedForGoalsMap[acc.id] ?: 0.0
-                        FilterChip(
-                            selected = selectedAccountId == acc.id,
-                            onClick = { selectedAccountId = acc.id },
-                            label = { Text("${acc.name} (${"Accantonato:".t(language)} ${savedAmount.formatEuro()})") },
-                            modifier = Modifier.padding(horizontal = 4.dp)
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Nota / Titolo Spesa".t(language)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Date selector (restricted to past dates up to now)
+                val formattedDateTime = sdf.format(selectedTimestamp)
+                OutlinedTextField(
+                    value = formattedDateTime,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Data e Ora (Passata)".t(language)) },
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            val dpd = DatePickerDialog(
+                                context,
+                                { _, year, month, dayOfMonth ->
+                                    calendar.set(Calendar.YEAR, year)
+                                    calendar.set(Calendar.MONTH, month)
+                                    calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                    
+                                    TimePickerDialog(
+                                        context,
+                                        { _, hourOfDay, minute ->
+                                            calendar.set(Calendar.HOUR_OF_DAY, hourOfDay)
+                                            calendar.set(Calendar.MINUTE, minute)
+                                            val chosenTime = calendar.timeInMillis
+                                            if (chosenTime <= System.currentTimeMillis()) {
+                                                selectedTimestamp = chosenTime
+                                                errorMessage = null
+                                            } else {
+                                                errorMessage = "Seleziona una data e ora passata o presente.".t(language)
+                                            }
+                                        },
+                                        calendar.get(Calendar.HOUR_OF_DAY),
+                                        calendar.get(Calendar.MINUTE),
+                                        true
+                                    ).show()
+                                },
+                                calendar.get(Calendar.YEAR),
+                                calendar.get(Calendar.MONTH),
+                                calendar.get(Calendar.DAY_OF_MONTH)
+                            )
+                            dpd.datePicker.maxDate = System.currentTimeMillis()
+                            dpd.show()
+                        }) {
+                            Icon(Icons.Default.DateRange, contentDescription = null)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Categories selection
+                Text("Categoria:".t(language))
+                BudgieDropdown(
+                    label = "Seleziona Categoria".t(language),
+                    options = expenseCats,
+                    selectedOption = categories.find { it.id == selectedCategoryId } ?: expenseCats.firstOrNull(),
+                    optionToString = { it?.let { "${it.iconEmoji} ${it.name}" } ?: "Nessuna".t(language) },
+                    onOptionSelected = { cat ->
+                        selectedCategoryId = cat?.id
+                        selectedSubCategoryId = null
+                    }
+                )
+
+                if (selectedCategoryId != null) {
+                    val subCats = categories.filter { it.parentCategoryId == selectedCategoryId }
+                    if (subCats.isNotEmpty()) {
+                        Text("Sottocategoria (Opzionale):".t(language))
+                        val subOptions = listOf(null) + subCats
+                        BudgieDropdown(
+                            label = "Seleziona Sottocategoria".t(language),
+                            options = subOptions,
+                            selectedOption = categories.find { it.id == selectedSubCategoryId },
+                            optionToString = { it?.let { "${it.iconEmoji} ${it.name}" } ?: "Nessuna".t(language) },
+                            onOptionSelected = { subCat ->
+                                selectedSubCategoryId = subCat?.id
+                            }
                         )
                     }
                 }
@@ -5362,344 +5856,28 @@ fun RilasciaFondiDialog(
             Button(
                 onClick = {
                     val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
-                    val activeAccId = if (accounts.any { it.id == selectedAccountId }) selectedAccountId else (accounts.firstOrNull()?.id ?: 0)
-                    when {
-                        amount <= 0.0 -> errorMessage = "Inserisci una quota valida maggiore di zero.".t(language)
-                        activeAccId <= 0 -> errorMessage = "Seleziona un conto valido.".t(language)
-                        amount > maxReleaseLimit -> errorMessage = "L'importo supera il limite massimo rilasciabile.".t(language)
-                        else -> {
-                            try {
-                                viewModel.addVirtualWithdrawal(amount, activeAccId)
-                                onDismiss()
-                            } catch (e: Exception) {
-                                errorMessage = "Errore durante il rilascio: ${e.localizedMessage}".t(language)
-                            }
-                        }
-                    }
-                }
-            ) {
-                Text("Rilascia".t(language))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Annulla".t(language))
-            }
-        }
-    )
-}
-
-@Composable
-fun AssegnaFondiAObiettivoDialog(
-    goal: SavingsGoal,
-    unallocatedAmount: Double,
-    viewModel: WalletViewModel,
-    onDismiss: () -> Unit
-) {
-    val language by viewModel.appLanguage.collectAsStateWithLifecycle()
-    var amountStr by remember { mutableStateOf("") }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    val remainingTarget = (goal.targetAmount - goal.currentAmount).coerceAtLeast(0.0)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Assegna Fondi a Obiettivo".t(language)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (errorMessage != null) {
-                    Text(
-                        text = errorMessage!!,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
-                    )
-                }
-
-                Text("Destina parte dei risparmi non assegnati del Salvadanaio all'obiettivo:".t(language) + " ${goal.name}")
-                Text("${"Disponibili non assegnati:".t(language)} ${unallocatedAmount.formatEuro()}", fontWeight = FontWeight.Bold)
-                Text("${"Target rimanente:".t(language)} ${remainingTarget.formatEuro()}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-
-                OutlinedTextField(
-                    value = amountStr,
-                    onValueChange = { 
-                        amountStr = it 
-                        errorMessage = null
-                    },
-                    label = { Text("Importo da vincolare (€)".t(language)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (remainingTarget > 0.0) {
-                    TextButton(
-                        onClick = { amountStr = remainingTarget.toString() },
-                        enabled = unallocatedAmount > 0.0,
-                        modifier = Modifier.align(Alignment.End),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("${"Imposta intero importo previsto".t(language)} (${remainingTarget.formatEuro()})")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
                     when {
                         amount <= 0.0 -> errorMessage = "Inserisci un importo valido maggiore di zero.".t(language)
-                        amount > unallocatedAmount -> errorMessage = "L'importo supera i fondi non assegnati disponibili.".t(language)
+                        selectedTimestamp > System.currentTimeMillis() -> errorMessage = "Non puoi selezionare una data futura.".t(language)
                         else -> {
                             try {
-                                viewModel.allocateSavingsToGoal(goal, amount)
+                                viewModel.completeGoalAsExpense(
+                                    goal = goal,
+                                    amount = amount,
+                                    categoryId = selectedCategoryId ?: expenseCats.firstOrNull()?.id,
+                                    subCategoryId = selectedSubCategoryId,
+                                    note = note,
+                                    timestamp = selectedTimestamp
+                                )
                                 onDismiss()
                             } catch (e: Exception) {
-                                errorMessage = "Errore durante l'assegnazione: ${e.localizedMessage}".t(language)
+                                errorMessage = "Errore: ${e.localizedMessage}".t(language)
                             }
                         }
                     }
                 }
             ) {
-                Text("Assegna".t(language))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Annulla".t(language))
-            }
-        }
-    )
-}
-
-@Composable
-fun RimuoviFondiDaObiettivoDialog(
-    goal: SavingsGoal,
-    viewModel: WalletViewModel,
-    onDismiss: () -> Unit
-) {
-    val language by viewModel.appLanguage.collectAsStateWithLifecycle()
-    var amountStr by remember { mutableStateOf("") }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Rimuovi Fondi da Obiettivo".t(language)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (errorMessage != null) {
-                    Text(
-                        text = errorMessage!!,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
-                    )
-                }
-
-                Text("Rilascia parte dei fondi vincolati a questo obiettivo e riportali nello stato non assegnato del Salvadanaio.".t(language))
-                Text("${"Attualmente vincolati:".t(language)} ${goal.currentAmount.formatEuro()}", fontWeight = FontWeight.Bold)
-
-                OutlinedTextField(
-                    value = amountStr,
-                    onValueChange = { 
-                        amountStr = it 
-                        errorMessage = null
-                    },
-                    label = { Text("Importo da svincolare (€)".t(language)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (goal.currentAmount > 0.0) {
-                    TextButton(
-                        onClick = { amountStr = goal.currentAmount.toString() },
-                        modifier = Modifier.align(Alignment.End),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("${"Rimuovi tutto".t(language)} (${goal.currentAmount.formatEuro()})")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val amount = amountStr.replace(',', '.').toDoubleOrNull() ?: 0.0
-                    when {
-                        amount <= 0.0 -> errorMessage = "Inserisci un importo valido maggiore di zero.".t(language)
-                        amount > goal.currentAmount -> errorMessage = "L'importo supera i fondi attualmente vincolati.".t(language)
-                        else -> {
-                            try {
-                                viewModel.deallocateSavingsFromGoal(goal, amount)
-                                onDismiss()
-                            } catch (e: Exception) {
-                                errorMessage = "Errore durante il rilascio: ${e.localizedMessage}".t(language)
-                            }
-                        }
-                    }
-                }
-            ) {
-                Text("Rimuovi".t(language))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Annulla".t(language))
-            }
-        }
-    )
-}
-
-@Composable
-fun CompletaObiettivoDialog(
-    goal: SavingsGoal,
-    accounts: List<Account>,
-    viewModel: WalletViewModel,
-    onDismiss: () -> Unit
-) {
-    val language by viewModel.appLanguage.collectAsStateWithLifecycle()
-    val categories by viewModel.categories.collectAsStateWithLifecycle()
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    var recordAsExpense by remember { mutableStateOf(false) }
-    var selectedAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: 0) }
-    var selectedCategoryId by remember { mutableStateOf<Int?>(null) }
-    var selectedSubCategoryId by remember { mutableStateOf<Int?>(null) }
-    var note by remember { mutableStateOf(goal.name) }
-    var selectedTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
-
-    val calendar = remember { java.util.Calendar.getInstance() }
-    val sdf = remember { java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.ITALIAN) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Completa Obiettivo".t(language)) },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text("${"Congratulazioni per aver completato l'obiettivo:".t(language)} ${goal.name}!", fontWeight = FontWeight.Bold)
-                Text("L'obiettivo verrà chiuso. Vuoi registrare l'acquisto reale come una spesa reale in contabilità?".t(language))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.clickable { recordAsExpense = !recordAsExpense }
-                ) {
-                    Checkbox(checked = recordAsExpense, onCheckedChange = { recordAsExpense = it })
-                    Text("Registra come spesa reale".t(language))
-                }
-
-                if (recordAsExpense) {
-                    Divider()
-                    Text("Dettagli Spesa Reale:".t(language), fontWeight = FontWeight.Bold)
-
-                    Text("Conto di addebito reale:".t(language))
-                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        accounts.forEach { acc ->
-                            FilterChip(
-                                selected = selectedAccountId == acc.id,
-                                onClick = { selectedAccountId = acc.id },
-                                label = { Text("${acc.name} (${acc.balance.formatEuro()})") },
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = note,
-                        onValueChange = { note = it },
-                        label = { Text("Nota/Titolo Spesa".t(language)) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // Date selector
-                    val formattedDateTime = sdf.format(selectedTimestamp)
-                    OutlinedTextField(
-                        value = formattedDateTime,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Data e Ora".t(language)) },
-                        trailingIcon = {
-                            IconButton(onClick = {
-                                android.app.DatePickerDialog(
-                                    context,
-                                    { _, year, month, dayOfMonth ->
-                                        calendar.set(java.util.Calendar.YEAR, year)
-                                        calendar.set(java.util.Calendar.MONTH, month)
-                                        calendar.set(java.util.Calendar.DAY_OF_MONTH, dayOfMonth)
-                                        
-                                        android.app.TimePickerDialog(
-                                            context,
-                                            { _, hourOfDay, minute ->
-                                                calendar.set(java.util.Calendar.HOUR_OF_DAY, hourOfDay)
-                                                calendar.set(java.util.Calendar.MINUTE, minute)
-                                                selectedTimestamp = calendar.timeInMillis
-                                            },
-                                            calendar.get(java.util.Calendar.HOUR_OF_DAY),
-                                            calendar.get(java.util.Calendar.MINUTE),
-                                            true
-                                        ).show()
-                                    },
-                                    calendar.get(java.util.Calendar.YEAR),
-                                    calendar.get(java.util.Calendar.MONTH),
-                                    calendar.get(java.util.Calendar.DAY_OF_MONTH)
-                                ).show()
-                            }) {
-                                Icon(Icons.Default.DateRange, contentDescription = null)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // Categories selection
-                    val expenseCats = categories.filter { it.parentCategoryId == null && it.type == "Expense" }
-                    Text("Categoria:".t(language))
-                    BudgieDropdown(
-                        label = "Seleziona Categoria".t(language),
-                        options = expenseCats,
-                        selectedOption = categories.find { it.id == selectedCategoryId } ?: expenseCats.firstOrNull(),
-                        optionToString = { it?.let { "${it.iconEmoji} ${it.name}" } ?: "Nessuna".t(language) },
-                        onOptionSelected = { cat ->
-                            selectedCategoryId = cat?.id
-                            selectedSubCategoryId = null
-                        }
-                    )
-
-                    if (selectedCategoryId != null) {
-                        val subCats = categories.filter { it.parentCategoryId == selectedCategoryId }
-                        if (subCats.isNotEmpty()) {
-                            Text("Sottocategoria (Opzionale):".t(language))
-                            val subOptions = listOf(null) + subCats
-                            BudgieDropdown(
-                                label = "Seleziona Sottocategoria".t(language),
-                                options = subOptions,
-                                selectedOption = categories.find { it.id == selectedSubCategoryId },
-                                optionToString = { it?.let { "${it.iconEmoji} ${it.name}" } ?: "Nessuna".t(language) },
-                                onOptionSelected = { subCat ->
-                                    selectedSubCategoryId = subCat?.id
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    viewModel.completeSavingsGoal(
-                        goal = goal,
-                        recordAsExpense = recordAsExpense,
-                        amount = goal.currentAmount,
-                        fromAccountId = selectedAccountId,
-                        categoryId = selectedCategoryId ?: categories.filter { it.parentCategoryId == null && it.type == "Expense" }.firstOrNull()?.id,
-                        subCategoryId = selectedSubCategoryId,
-                        note = note,
-                        timestamp = selectedTimestamp
-                    )
-                    onDismiss()
-                }
-            ) {
-                Text("Completa".t(language))
+                Text("Conferma Spesa".t(language))
             }
         },
         dismissButton = {
@@ -5764,7 +5942,9 @@ fun AccountsScreen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
         ) {
             Row(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -5876,12 +6056,19 @@ fun AccountsScreen(
 }
 
 // --- UTILITY EXTENSION ---
-fun String.toAccountEmoji(): String = when (this) {
-    "Bank" -> "🏦"
-    "Card" -> "💳"
-    "Cash" -> "💵"
-    "Conto Corrente" -> "🏦"
-    else -> if (this.isNotBlank()) this else "💰"
+fun String.toAccountEmoji(): String {
+    val t = this.trim()
+    return if (t.isNotBlank() && isValidSingleEmoji(t)) {
+        t
+    } else {
+        when (t.lowercase(Locale.ROOT)) {
+            "bank", "conto corrente", "banca" -> "🏦"
+            "card", "carta", "carta di credito" -> "💳"
+            "cash", "contanti", "contante" -> "💵"
+            "savings", "risparmi", "salvadanaio" -> "💰"
+            else -> if (t.isNotBlank()) t else "💳"
+        }
+    }
 }
 
 // --- EDIT ACCOUNT DIALOG ---
@@ -5893,7 +6080,7 @@ fun EditAccountDialog(
 ) {
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
     var name by remember { mutableStateOf(account.name) }
-    var balanceStr by remember { mutableStateOf(account.balance.toString()) }
+    var balanceStr by remember { mutableStateOf(account.balance.formatForInput()) }
     var type by remember {
         mutableStateOf(
             when (account.type) {
@@ -6010,9 +6197,10 @@ fun EditTransactionDialog(
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val wordFrequencies by viewModel.noteWordFrequencies.collectAsStateWithLifecycle()
 
     var title by remember { mutableStateOf(transaction.title) }
-    var amountStr by remember { mutableStateOf(transaction.amount.toString()) }
+    var amountStr by remember { mutableStateOf(transaction.amount.formatForInput()) }
     var selectedCategoryId by remember { mutableStateOf(transaction.categoryId) }
     var selectedSourceAccountId by remember { mutableStateOf(transaction.sourceAccountId) }
     var selectedDestinationAccountId by remember { mutableStateOf(transaction.destinationAccountId) }
@@ -6060,6 +6248,37 @@ fun EditTransactionDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                val openDatePickerAndPicker = {
+                    calendar.timeInMillis = try { sdf.parse(dateStr)?.time ?: transaction.timestamp } catch(e: Exception) { transaction.timestamp }
+                    val datePickerDialog = DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            calendar.set(Calendar.YEAR, year)
+                            calendar.set(Calendar.MONTH, month)
+                            calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                            
+                            TimePickerDialog(
+                                context,
+                                { _, hour, minute ->
+                                    calendar.set(Calendar.HOUR_OF_DAY, hour)
+                                    calendar.set(Calendar.MINUTE, minute)
+                                    calendar.set(Calendar.SECOND, 0)
+                                    calendar.set(Calendar.MILLISECOND, 0)
+                                    dateStr = sdf.format(calendar.time)
+                                },
+                                calendar.get(Calendar.HOUR_OF_DAY),
+                                calendar.get(Calendar.MINUTE),
+                                true
+                            ).show()
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    )
+                    datePickerDialog.datePicker.maxDate = System.currentTimeMillis()
+                    datePickerDialog.show()
+                }
+
                 OutlinedTextField(
                     value = dateStr,
                     onValueChange = { },
@@ -6068,48 +6287,23 @@ fun EditTransactionDialog(
                     enabled = !isInitialBalance,
                     trailingIcon = {
                         if (!isInitialBalance) {
-                            IconButton(onClick = {
-                                calendar.timeInMillis = try { sdf.parse(dateStr)?.time ?: transaction.timestamp } catch(e: Exception) { transaction.timestamp }
-                                val datePickerDialog = android.app.DatePickerDialog(
-                                    context,
-                                    { _, year, month, dayOfMonth ->
-                                        calendar.set(Calendar.YEAR, year)
-                                        calendar.set(Calendar.MONTH, month)
-                                        calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                                        
-                                        android.app.TimePickerDialog(
-                                            context,
-                                            { _, hour, minute ->
-                                                calendar.set(Calendar.HOUR_OF_DAY, hour)
-                                                calendar.set(Calendar.MINUTE, minute)
-                                                calendar.set(Calendar.SECOND, 0)
-                                                calendar.set(Calendar.MILLISECOND, 0)
-                                                dateStr = sdf.format(calendar.time)
-                                            },
-                                            calendar.get(Calendar.HOUR_OF_DAY),
-                                            calendar.get(Calendar.MINUTE),
-                                            true
-                                        ).show()
-                                    },
-                                    calendar.get(Calendar.YEAR),
-                                    calendar.get(Calendar.MONTH),
-                                    calendar.get(Calendar.DAY_OF_MONTH)
-                                )
-                                datePickerDialog.datePicker.maxDate = System.currentTimeMillis()
-                                datePickerDialog.show()
-                            }) {
+                            IconButton(onClick = { openDatePickerAndPicker() }) {
                                 Icon(Icons.Default.DateRange, contentDescription = "Seleziona Data e Ora".t(language))
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isInitialBalance) { openDatePickerAndPicker() }
                 )
 
-                OutlinedTextField(
+                NoteTextFieldWithAutocomplete(
                     value = title,
-                    onValueChange = { if (it.length <= 22) title = it },
-                    label = { Text("Nota (massimo 22 caratteri)".t(language)) },
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { title = it },
+                    wordFrequencies = wordFrequencies,
+                    label = "Nota (massimo 22 caratteri)".t(language),
+                    language = language,
+                    maxChars = 22
                 )
 
                 // Select account
@@ -6267,7 +6461,7 @@ fun AddCategoryBudgetDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nuovo Budget di Categoria".t(language)) },
+        title = { Text("Nuovo Budget per Categoria".t(language)) },
         text = {
             Column(
                 modifier = Modifier
@@ -6438,7 +6632,7 @@ fun AddTotalBudgetDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nuovo Budget Complessivo".t(language)) },
+        title = { Text("Nuovo Budget per Conto".t(language)) },
         text = {
             Column(
                 modifier = Modifier
@@ -6454,13 +6648,13 @@ fun AddTotalBudgetDialog(
                     )
                 }
 
-                Text("Seleziona Ambito:".t(language), style = MaterialTheme.typography.labelLarge)
+                Text("Seleziona Conto:".t(language), style = MaterialTheme.typography.labelLarge)
                 val scopeOptions = listOf(null) + accounts
                 BudgieDropdown(
-                    label = "Ambito".t(language),
+                    label = "Conto".t(language),
                     options = scopeOptions,
                     selectedOption = accounts.find { it.id == selectedAccountId },
-                    optionToString = { it?.let { "${it.type.toAccountEmoji()} ${it.name}" } ?: "🌍 ${"Tutti i Conti Insieme".t(language)}" },
+                    optionToString = { it?.let { "${it.type.toAccountEmoji()} ${it.name}" } ?: "🌍 ${"Tutti i Conti".t(language)}" },
                     onOptionSelected = { selectedAccountId = it?.id }
                 )
 
@@ -6581,7 +6775,7 @@ fun EditBudgetDialog(
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
 
-    var amountStr by remember { mutableStateOf(budget.amountLimit.toString()) }
+    var amountStr by remember { mutableStateOf(budget.amountLimit.formatForInput()) }
     var notifyOnOverflow by remember { mutableStateOf(budget.notifyOnOverflow) }
     var autoRenew by remember { mutableStateOf(budget.autoRenew) }
     var isPinnedToHome by remember { mutableStateOf(budget.isPinnedToHome) }
@@ -6644,12 +6838,12 @@ fun EditBudgetDialog(
                     )
                 } else {
                     val scopeOptions = listOf(null) + accounts
-                    Text("Ambito (Conto)".t(language), style = MaterialTheme.typography.labelLarge)
+                    Text("Conto".t(language), style = MaterialTheme.typography.labelLarge)
                     BudgieDropdown(
-                        label = "Ambito".t(language),
+                        label = "Conto".t(language),
                         options = scopeOptions,
                         selectedOption = accounts.find { it.id == selectedAccountId },
-                        optionToString = { it?.let { "${it.type.toAccountEmoji()} ${it.name}" } ?: "🌍 ${"Tutti i Conti Insieme".t(language)}" },
+                        optionToString = { it?.let { "${it.type.toAccountEmoji()} ${it.name}" } ?: "🌍 ${"Tutti i Conti".t(language)}" },
                         onOptionSelected = { selectedAccountId = it?.id }
                     )
                 }
@@ -7379,6 +7573,7 @@ fun AddPlannedTransactionDialog(
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val wordFrequencies by viewModel.noteWordFrequencies.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var step by remember { mutableStateOf(1) } // Step 1 or Step 2
@@ -7401,7 +7596,7 @@ fun AddPlannedTransactionDialog(
         timeInMillis = existingPlanned?.startDate ?: tomorrowTime
     }
     var startDate by remember { mutableStateOf(defaultCalendar.timeInMillis) }
-    var amountStr by remember { mutableStateOf(existingPlanned?.amount?.toString() ?: "") }
+    var amountStr by remember { mutableStateOf(existingPlanned?.amount?.formatForInput() ?: "") }
     
     var sourceAccountId by remember { mutableStateOf(existingPlanned?.sourceAccountId ?: accounts.firstOrNull()?.id ?: 0) }
     var destinationAccountId by remember { 
@@ -7419,8 +7614,17 @@ fun AddPlannedTransactionDialog(
         }
     }
 
-    // Set default category when type or category changes
+    // Set default category when type changes (preserving existing planned category on first load)
+    var isFirstTypeEffect by remember { mutableStateOf(true) }
     LaunchedEffect(type) {
+        if (isFirstTypeEffect) {
+            isFirstTypeEffect = false
+            if (existingPlanned != null && existingPlanned.categoryId != null) {
+                selectedCategoryId = existingPlanned.categoryId
+                selectedSubCategoryId = existingPlanned.subCategoryId
+                return@LaunchedEffect
+            }
+        }
         val mainCats = categories.filter { it.parentCategoryId == null && it.type == type }
         selectedCategoryId = mainCats.firstOrNull()?.id
         selectedSubCategoryId = null
@@ -7460,13 +7664,13 @@ fun AddPlannedTransactionDialog(
                 if (step == 1) {
                     // STEP 1 CONTENT:
                     // 1. Nome della pianificazione
-                    OutlinedTextField(
+                    NoteTextFieldWithAutocomplete(
                         value = title,
-                        onValueChange = { if (it.length <= 22 && !it.contains("\n")) title = it },
-                        label = { Text("Nome Pianificazione".t(language)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        maxLines = 1
+                        onValueChange = { title = it },
+                        wordFrequencies = wordFrequencies,
+                        label = "Nome Pianificazione".t(language),
+                        language = language,
+                        maxChars = 22
                     )
 
                     // 2. Tipo Trasferimento (Spesa / Entrata / Giroconto)
@@ -8139,4 +8343,114 @@ fun exportTransactionsToCSV(
         }
         context.startActivity(android.content.Intent.createChooser(shareIntent, chooserTitle))
     }
+}
+
+@Composable
+fun SearchTipsDialog(
+    language: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Suggerimenti di Ricerca".t(language),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Come cercare nella cronologia:".t(language),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                val tips = listOf(
+                    Triple(
+                        "Data Esatta (gg/mm/aaaa)".t(language),
+                        "15/09/2026",
+                        "Trova le transazioni eseguite in un giorno specifico.".t(language)
+                    ),
+                    Triple(
+                        "Mese e Anno (mm/aaaa)".t(language),
+                        "09/2026",
+                        "Filtra tutte le transazioni di un mese e anno specifici.".t(language)
+                    ),
+                    Triple(
+                        "Nota o Descrizione".t(language),
+                        "Spesa, Pizza, Stipendio",
+                        "Cerca parole chiave nella nota o titolo della transazione.".t(language)
+                    ),
+                    Triple(
+                        "Categoria o Sottocategoria".t(language),
+                        "Alimentari, Ristoranti, Svago",
+                        "Filtra per nome della categoria principale o sottocategoria.".t(language)
+                    ),
+                    Triple(
+                        "Conto".t(language),
+                        "Conto Principale, Carta",
+                        "Mostra le transazioni collegate a uno specifico conto.".t(language)
+                    )
+                )
+
+                tips.forEach { (title, examples, description) ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "${"Esempi:".t(language)} $examples",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Capito".t(language))
+            }
+        }
+    )
 }

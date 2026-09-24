@@ -82,6 +82,7 @@ fun MainAppContainer(
         var currentScreen by remember { mutableStateOf(BudgieScreen.HOME) }
         val notifications by viewModel.notifications.collectAsStateWithLifecycle()
         var showNotificationDialog by remember { mutableStateOf(false) }
+        var showSearchTipsDialog by remember { mutableStateOf(false) }
         var showingHistoryMode by remember { mutableStateOf(false) }
 
         BackHandler(enabled = currentScreen != BudgieScreen.HOME) {
@@ -267,40 +268,63 @@ fun MainAppContainer(
                         }
                     }
 
-                    // Notification Button
-                    Box(modifier = Modifier.wrapContentSize()) {
-                        IconButton(
-                            onClick = { 
-                                showingHistoryMode = false
-                                showNotificationDialog = true 
-                            },
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Notifications,
-                                contentDescription = "Notifiche",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        val unreadCount = notifications.count { !it.isRead }
-                        if (unreadCount > 0) {
-                            Box(
+                    // Top bar actions
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (currentScreen == BudgieScreen.HISTORY) {
+                            IconButton(
+                                onClick = { showSearchTipsDialog = true },
                                 modifier = Modifier
-                                    .size(18.dp)
-                                    .align(Alignment.TopEnd)
+                                    .size(48.dp)
                                     .clip(CircleShape)
-                                    .background(Color.Red),
-                                contentAlignment = Alignment.Center
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .testTag("search_tips_button")
                             ) {
-                                Text(
-                                    text = unreadCount.toString(),
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
+                                Icon(
+                                    imageVector = Icons.Default.HelpOutline,
+                                    contentDescription = "Suggerimenti di Ricerca".t(language),
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
+                            }
+                        }
+
+                        // Notification Button
+                        Box(modifier = Modifier.wrapContentSize()) {
+                            IconButton(
+                                onClick = { 
+                                    showingHistoryMode = false
+                                    showNotificationDialog = true 
+                                },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Notifications,
+                                    contentDescription = "Notifiche",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            val unreadCount = notifications.count { !it.isRead }
+                            if (unreadCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .align(Alignment.TopEnd)
+                                        .clip(CircleShape)
+                                        .background(Color.Red),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = unreadCount.toString(),
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
@@ -468,6 +492,13 @@ fun MainAppContainer(
                         }
                     }
                 }
+            )
+        }
+
+        if (showSearchTipsDialog) {
+            SearchTipsDialog(
+                language = language,
+                onDismiss = { showSearchTipsDialog = false }
             )
         }
     }

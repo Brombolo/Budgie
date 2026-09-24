@@ -1,6 +1,8 @@
 package com.example.ui
 
 import android.app.Application
+import android.app.PendingIntent
+import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -9,6 +11,8 @@ import com.example.data.*
 import java.util.Calendar
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 class WalletViewModel(application: Application, private val repository: BudgieRepository) : AndroidViewModel(application) {
 
@@ -20,6 +24,24 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     val savingsGoals = repository.allSavingsGoals.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val plannedTransactions = repository.allPlannedTransactions.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Frequency map of words used in past transaction notes/titles for smart autocomplete
+    val noteWordFrequencies: StateFlow<Map<String, Int>> = transactions.map { list ->
+        val freqMap = mutableMapOf<String, Int>()
+        list.forEach { tx ->
+            val titleText = tx.title.trim()
+            if (titleText.isNotBlank()) {
+                val words = titleText.split(Regex("[\\s,.;:!?\\-()\"]+"))
+                words.forEach { w ->
+                    val cleaned = w.trim()
+                    if (cleaned.length >= 1) {
+                        freqMap[cleaned] = (freqMap[cleaned] ?: 0) + 1
+                    }
+                }
+            }
+        }
+        freqMap
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     private val prefs = application.getSharedPreferences("BudgiePrefs", android.content.Context.MODE_PRIVATE)
 
     // --- UI FILTERS STATE ---
@@ -29,7 +51,7 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     private val _showInternalTransfers = MutableStateFlow(true)
     val showInternalTransfers = _showInternalTransfers.asStateFlow()
 
-    private val _selectedTimeRange = MutableStateFlow("Month") // "Today", "Week", "Month", "Custom"
+    private val _selectedTimeRange = MutableStateFlow(prefs.getString("home_trend_period", "Month") ?: "Month") // "Today", "Week", "Month", "Custom"
     val selectedTimeRange = _selectedTimeRange.asStateFlow()
 
     // --- SETTINGS STATE (ITALIAN & ENGLISH SUPPORT) ---
@@ -88,25 +110,74 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
         togglePlanningModule(enabled)
     }
 
+    val readNotificationsCount: StateFlow<Int> = notifications.map { list ->
+        list.count { it.isRead }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     fun markNotificationAsRead(id: String) {
+        val readSet = prefs.getStringSet("read_notifs", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+        readSet.add(id)
+        prefs.edit().putStringSet("read_notifs", readSet).apply()
+
         notifications.value = notifications.value.map {
             if (it.id == id) it.copy(isRead = true) else it
         }
     }
 
     fun removeNotification(id: String) {
+        val dismissedSet = prefs.getStringSet("dismissed_notifs", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+        dismissedSet.add(id)
+        prefs.edit().putStringSet("dismissed_notifs", dismissedSet).apply()
+
         notifications.value = notifications.value.filter { it.id != id }
     }
 
     fun removeNotificationsForBudget(budgetId: Int) {
+        notifications.value.forEach { 
+            if (it.budgetId == budgetId) {
+                val dismissedSet = prefs.getStringSet("dismissed_notifs", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+                dismissedSet.add(it.id)
+                prefs.edit().putStringSet("dismissed_notifs", dismissedSet).apply()
+            }
+        }
         notifications.value = notifications.value.filter { it.budgetId != budgetId }
     }
 
     fun clearAllNotifications() {
+        val dismissedSet = prefs.getStringSet("dismissed_notifs", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+        notifications.value.forEach { dismissedSet.add(it.id) }
+        prefs.edit().putStringSet("dismissed_notifs", dismissedSet).apply()
+
         notifications.value = emptyList()
     }
 
-    private fun showSystemNotification(title: String, message: String) {
+    private fun addNewNotifications(list: List<InAppNotification>) {
+        val dismissedSet = prefs.getStringSet("dismissed_notifs", emptySet()) ?: emptySet()
+        val readSet = prefs.getStringSet("read_notifs", emptySet()) ?: emptySet()
+
+        val filtered = list.filter { !dismissedSet.contains(it.id) }.map { notif ->
+            if (readSet.contains(notif.id)) notif.copy(isRead = true) else notif
+        }
+
+        if (filtered.isNotEmpty()) {
+            val current = notifications.value
+            val currentIds = current.map { it.id }.toSet()
+            val trulyNew = filtered.filter { !currentIds.contains(it.id) }
+            if (trulyNew.isNotEmpty()) {
+                notifications.value = current + trulyNew
+            }
+        }
+    }
+
+    private fun showSystemNotification(title: String, message: String, notificationId: String) {
+        val dismissedSet = prefs.getStringSet("dismissed_notifs", emptySet()) ?: emptySet()
+        if (dismissedSet.contains(notificationId)) return
+
+        val sentSet = prefs.getStringSet("sent_system_notifs", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+        if (sentSet.contains(notificationId)) return
+        sentSet.add(notificationId)
+        prefs.edit().putStringSet("sent_system_notifs", sentSet).apply()
+
         val context = getApplication<Application>().applicationContext
         val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         
@@ -117,30 +188,37 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                 "Notifiche Budgie",
                 android.app.NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Notifiche per scadenza e sforamento budget"
+                description = "Notifiche per scadenza e sforamento budget/obiettivi"
             }
             notificationManager.createNotificationChannel(channel)
         }
         
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+            putExtra("open_notifications", true)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        
+        val pendingIntent = if (intent != null) {
+            PendingIntent.getActivity(
+                context,
+                notificationId.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else null
+
         val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle(title)
             .setContentText(message)
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-            
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        if (intent != null) {
-            val pendingIntent = android.app.PendingIntent.getActivity(
-                context,
-                0,
-                intent,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-            )
+
+        if (pendingIntent != null) {
             builder.setContentIntent(pendingIntent)
         }
         
-        notificationManager.notify(System.currentTimeMillis().toInt(), builder.build())
+        notificationManager.notify(notificationId.hashCode(), builder.build())
     }
 
     private data class BudgetCheckState(
@@ -318,7 +396,7 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                                 InAppNotification(
                                     id = notifId,
                                     title = "Budget Scaduto ⏱️",
-                                    message = "Il tuo budget $budgetName da ${String.format(java.util.Locale.ITALIAN, "%.2f €", budget.amountLimit)} è scaduto. Clicca per reimpostarlo, modificarlo o eliminarlo.",
+                                    message = "Il tuo budget $budgetName da ${String.format(Locale.ITALIAN, "%.2f €", budget.amountLimit)} è scaduto.",
                                     budgetId = budget.id
                                 )
                             )
@@ -355,7 +433,7 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                                 
                                 // Mostra notifica reale di sistema
                                 if (pushNotificationsEnabled.value) {
-                                    showSystemNotification(title, msg)
+                                    showSystemNotification(title, msg, notifId)
                                 }
                             }
                         }
@@ -363,7 +441,75 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                 }
                 
                 if (newNotifications.isNotEmpty()) {
-                    notifications.value = notifications.value + newNotifications
+                    addNewNotifications(newNotifications)
+                }
+            }
+        }
+
+        // Controllo automatico notifiche obiettivi (Target raggiunto e Scadenza)
+        viewModelScope.launch {
+            combine(savingsGoals, accounts) { goalsList, accountsList ->
+                Pair(goalsList, accountsList)
+            }.collect { (goalsList, accountsList) ->
+                val now = System.currentTimeMillis()
+                val sdf = SimpleDateFormat("dd/MM/yyyy", Locale.ITALIAN)
+                val newNotifications = mutableListOf<InAppNotification>()
+
+                goalsList.forEach { goal ->
+                    val linkedAcc = accountsList.find { it.id == goal.accountId }
+                    val currentSaved = linkedAcc?.savedAmount ?: 0.0
+
+                    // 1. Controllo Target Raggiunto
+                    if (goal.targetAmount > 0 && currentSaved >= goal.targetAmount) {
+                        val notifId = "goal_target_${goal.id}_${goal.targetAmount}"
+                        val alreadyNotified = notifications.value.any { it.id == notifId }
+                        if (!alreadyNotified) {
+                            val title = "Obiettivo Raggiunto! 🪙"
+                            val msg = "Congratulazioni! Hai raggiunto il target per l'obiettivo '${goal.name}'."
+                            newNotifications.add(
+                                InAppNotification(
+                                    id = notifId,
+                                    title = title,
+                                    message = msg,
+                                    budgetId = -1
+                                )
+                            )
+                            if (pushNotificationsEnabled.value) {
+                                showSystemNotification(title, msg, notifId)
+                            }
+                        }
+                    }
+
+                    // 2. Controllo Scadenza Obiettivo
+                    if (goal.deadline.isNotBlank()) {
+                        try {
+                            val deadlineDate = sdf.parse(goal.deadline)
+                            if (deadlineDate != null && now >= deadlineDate.time) {
+                                val notifId = "goal_expired_${goal.id}_${goal.deadline}"
+                                val alreadyNotified = notifications.value.any { it.id == notifId }
+                                if (!alreadyNotified) {
+                                    val title = "Obiettivo Scaduto ⏱️"
+                                    val msg = "La data di scadenza per l'obiettivo '${goal.name}' è stata raggiunta."
+                                    newNotifications.add(
+                                        InAppNotification(
+                                            id = notifId,
+                                            title = title,
+                                            message = msg,
+                                            budgetId = -1
+                                        )
+                                    )
+                                    if (pushNotificationsEnabled.value) {
+                                        showSystemNotification(title, msg, notifId)
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+
+                if (newNotifications.isNotEmpty()) {
+                    addNewNotifications(newNotifications)
                 }
             }
         }
@@ -446,6 +592,7 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
 
     fun setTimeRange(range: String) {
         _selectedTimeRange.value = range
+        prefs.edit().putString("home_trend_period", range).apply()
     }
 
     // --- DATABASE WRITERS ---
@@ -725,14 +872,14 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
     fun toggleGoalsModule(enabled: Boolean) {
         viewModelScope.launch {
             if (!enabled) {
-                // Cancella tutti gli obiettivi (uncompleted)
+                // Cancella tutti gli obiettivi
                 savingsGoals.value.forEach { goal ->
                     repository.deleteSavingsGoal(goal)
                 }
-                // Cancella tutte le transazioni di accantonamento / rilascio virtuali
-                transactions.value.forEach { tx ->
-                    if (tx.type == "VirtualSaving" || tx.type == "VirtualWithdrawal") {
-                        repository.deleteTransaction(tx)
+                // Azzera i risparmi accantonati nei conti
+                accounts.value.forEach { acc ->
+                    if (acc.savedAmount > 0.0) {
+                        repository.updateAccount(acc.copy(savedAmount = 0.0))
                     }
                 }
             }
@@ -777,82 +924,59 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
         }
     }
 
-    fun clearAllGoalsAllocations() {
+    fun accantonaToSavings(accountId: Int, amount: Double) {
         viewModelScope.launch {
-            savingsGoals.value.forEach { goal ->
-                if (goal.currentAmount > 0.0) {
-                    repository.updateSavingsGoal(goal.copy(currentAmount = 0.0))
-                }
+            val account = repository.getAccountById(accountId)
+            if (account != null) {
+                repository.updateAccount(account.copy(savedAmount = account.savedAmount + amount))
             }
         }
     }
 
-    fun addSavingsGoal(name: String, targetAmount: Double, deadline: String, iconEmoji: String? = null) {
+    fun releaseSavingsFromAccount(accountId: Int, amount: Double) {
         viewModelScope.launch {
-            repository.insertSavingsGoal(SavingsGoal(name = name, targetAmount = targetAmount, currentAmount = 0.0, deadline = deadline, iconEmoji = iconEmoji))
+            val account = repository.getAccountById(accountId)
+            if (account != null) {
+                val newSaved = (account.savedAmount - amount).coerceAtLeast(0.0)
+                repository.updateAccount(account.copy(savedAmount = newSaved))
+            }
         }
     }
 
-    fun addVirtualSaving(amount: Double, fromAccountId: Int) {
+    fun addSavingsGoal(name: String, targetAmount: Double, deadline: String, iconEmoji: String, accountId: Int) {
         viewModelScope.launch {
-            repository.insertTransaction(
-                Transaction(
-                    title = "Accantonamento obiettivi",
-                    amount = amount,
-                    type = "VirtualSaving",
-                    timestamp = System.currentTimeMillis(),
-                    sourceAccountId = fromAccountId
-                )
-            )
+            repository.insertSavingsGoal(SavingsGoal(name = name, targetAmount = targetAmount, deadline = deadline, iconEmoji = iconEmoji, accountId = accountId))
         }
     }
 
-    fun addVirtualWithdrawal(amount: Double, toAccountId: Int) {
+    fun updateSavingsGoal(goal: SavingsGoal) {
         viewModelScope.launch {
-            repository.insertTransaction(
-                Transaction(
-                    title = "Rilascio da obiettivi",
-                    amount = amount,
-                    type = "VirtualWithdrawal",
-                    timestamp = System.currentTimeMillis(),
-                    sourceAccountId = toAccountId
-                )
-            )
+            repository.updateSavingsGoal(goal)
         }
     }
 
-    fun allocateSavingsToGoal(goal: SavingsGoal, amount: Double) {
+    fun deleteSavingsGoal(goal: SavingsGoal) {
         viewModelScope.launch {
-            val updatedGoal = goal.copy(currentAmount = goal.currentAmount + amount)
-            repository.updateSavingsGoal(updatedGoal)
+            repository.deleteSavingsGoal(goal)
         }
     }
 
-    fun deallocateSavingsFromGoal(goal: SavingsGoal, amount: Double) {
-        viewModelScope.launch {
-            val updatedGoal = goal.copy(currentAmount = (goal.currentAmount - amount).coerceAtLeast(0.0))
-            repository.updateSavingsGoal(updatedGoal)
-        }
-    }
-
-    fun completeSavingsGoal(
+    fun completeGoalAsExpense(
         goal: SavingsGoal,
-        recordAsExpense: Boolean,
         amount: Double,
-        fromAccountId: Int,
         categoryId: Int?,
         subCategoryId: Int?,
         note: String,
         timestamp: Long
     ) {
         viewModelScope.launch {
-            if (recordAsExpense) {
-                // 1. Detrai dal conto reale
-                val account = repository.getAccountById(fromAccountId)
-                if (account != null) {
-                    repository.updateAccount(account.copy(balance = account.balance - amount))
-                }
-                // Inserisci spesa reale
+            val accountId = goal.accountId
+            val account = repository.getAccountById(accountId)
+            if (account != null) {
+                val newBalance = account.balance - amount
+                val newSavedAmount = (account.savedAmount - amount).coerceAtLeast(0.0)
+                repository.updateAccount(account.copy(balance = newBalance, savedAmount = newSavedAmount))
+
                 repository.insertTransaction(
                     Transaction(
                         title = note.ifBlank { goal.name },
@@ -860,27 +984,10 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
                         type = "Expense",
                         timestamp = timestamp,
                         categoryId = subCategoryId ?: categoryId,
-                        sourceAccountId = fromAccountId
-                    )
-                )
-                // 2. Rilascia corrispondente importo salvato virtuale così il saldo disponibile si riallinea correttamente
-                repository.insertTransaction(
-                    Transaction(
-                        title = "Svincolato per acquisto: ${goal.name}",
-                        amount = amount,
-                        type = "VirtualWithdrawal",
-                        timestamp = timestamp,
-                        sourceAccountId = fromAccountId
+                        sourceAccountId = accountId
                     )
                 )
             }
-            // Elimina l'obiettivo
-            repository.deleteSavingsGoal(goal)
-        }
-    }
-
-    fun deleteSavingsGoal(goal: SavingsGoal) {
-        viewModelScope.launch {
             repository.deleteSavingsGoal(goal)
         }
     }
@@ -1021,38 +1128,14 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
         list.sumOf { it.balance }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    // Mappa dei risparmi virtuali accantonati per ciascun conto (accountId -> importo)
-    val totalSavedForGoalsByAccount: StateFlow<Map<Int, Double>> = transactions.map { list ->
-        val map = mutableMapOf<Int, Double>()
-        list.forEach { tx ->
-            if (tx.type == "VirtualSaving") {
-                map[tx.sourceAccountId] = (map[tx.sourceAccountId] ?: 0.0) + tx.amount
-            } else if (tx.type == "VirtualWithdrawal") {
-                map[tx.sourceAccountId] = (map[tx.sourceAccountId] ?: 0.0) - tx.amount
-            }
-        }
-        map
+    // Mappa dei risparmi accantonati per ciascun conto (accountId -> importo)
+    val totalSavedForGoalsByAccount: StateFlow<Map<Int, Double>> = accounts.map { list ->
+        list.associate { it.id to it.savedAmount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    // Totale accantonato complessivo (somma dei risparmi virtuali di tutti i conti attivi)
-    val totalAccantonato: StateFlow<Double> = combine(
-        totalSavedForGoalsByAccount,
-        accounts
-    ) { savedMap, list ->
-        list.filter { it.isIncludedInTotal }.sumOf { savedMap[it.id] ?: 0.0 }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
-
-    // Totale allocato agli obiettivi (somma dei currentAmount dei vari obiettivi di risparmio)
-    val totalAllocatedToGoals: StateFlow<Double> = savingsGoals.map { list ->
-        list.sumOf { it.currentAmount }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
-
-    // Risparmi nel salvadanaio liberi (non ancora assegnati ad alcun obiettivo)
-    val unallocatedSavings: StateFlow<Double> = combine(
-        totalAccantonato,
-        totalAllocatedToGoals
-    ) { accantonato, allocated ->
-        (accantonato - allocated).coerceAtLeast(0.0)
+    // Totale accantonato complessivo (somma dei risparmi di tutti i conti inclusi)
+    val totalAccantonato: StateFlow<Double> = accounts.map { list ->
+        list.filter { it.isIncludedInTotal }.sumOf { it.savedAmount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     // Lista delle transazioni filtrate in base a:

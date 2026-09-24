@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SavingsGoal::class,
         PlannedTransaction::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class BudgieDatabase : RoomDatabase() {
@@ -33,6 +33,14 @@ abstract class BudgieDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE accounts ADD COLUMN savedAmount REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE savings_goals ADD COLUMN accountId INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE savings_goals ADD COLUMN iconEmoji TEXT NOT NULL DEFAULT '🐷'")
+            }
+        }
+
         fun getDatabase(context: Context): BudgieDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -40,7 +48,7 @@ abstract class BudgieDatabase : RoomDatabase() {
                     BudgieDatabase::class.java,
                     "budgie_database"
                 )
-                .addMigrations(MIGRATION_8_9)
+                .addMigrations(MIGRATION_8_9, MIGRATION_9_10)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

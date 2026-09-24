@@ -9,7 +9,8 @@ data class Account(
     val name: String,
     val type: String, // "Bank", "Card", "Cash"
     val balance: Double,
-    val isIncludedInTotal: Boolean = true
+    val isIncludedInTotal: Boolean = true,
+    val savedAmount: Double = 0.0
 )
 
 @Entity(tableName = "categories")
@@ -57,9 +58,9 @@ data class SavingsGoal(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String,
     val targetAmount: Double,
-    val currentAmount: Double = 0.0,
-    val deadline: String,
-    val iconEmoji: String? = null
+    val deadline: String = "",
+    val iconEmoji: String = "🐷",
+    val accountId: Int = 0
 )
 
 @Entity(tableName = "planned_transactions")
