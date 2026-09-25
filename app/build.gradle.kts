@@ -14,7 +14,7 @@ android {
   compileSdk = 36
 
   defaultConfig {
-    applicationId = "com.aistudio.budgie.fhnskp"
+    applicationId = "com.aistudio.budgie.v2"
     minSdk = 24
     targetSdk = 35
     versionCode = 4

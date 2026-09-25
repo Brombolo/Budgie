@@ -49,6 +49,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.*
 import com.example.ui.*
@@ -8289,7 +8290,7 @@ fun exportTransactionsToCSV(
     file.writeText(csvContent, Charsets.UTF_8)
 
     val uri = try {
-        androidx.core.content.FileProvider.getUriForFile(context, "com.example.fileprovider", file)
+        FileProvider.getUriForFile(context, "com.aistudio.budgie.v2.fileprovider", file)
     } catch (e: Exception) {
         null
     }
