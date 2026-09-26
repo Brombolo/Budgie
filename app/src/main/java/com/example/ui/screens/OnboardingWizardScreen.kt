@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -15,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -61,6 +64,45 @@ fun OnboardingWizardScreen(
     var accountName by remember { mutableStateOf("") }
     var accountBalanceStr by remember { mutableStateOf("1000") }
     var accountType by remember { mutableStateOf("Bank") } // "Bank", "Cash", "Card"
+
+    val context = LocalContext.current
+    val isOldAppInstalled = remember {
+        try {
+            context.packageManager.getPackageInfo("com.aistudio.budgie.fhnskp", 0)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    var importMessage by remember { mutableStateOf<String?>(null) }
+    val csvPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importDataFromCSV(context, uri) { success, msg ->
+                importMessage = msg
+                if (success) {
+                    viewModel.completeOnboarding(
+                        firstAccountName = "Conto Importato",
+                        firstAccountBalance = 0.0,
+                        firstAccountType = "Bank",
+                        language = selectedLanguage,
+                        theme = selectedTheme,
+                        currencyCodeVal = selectedCurrencyCode,
+                        currencySymbolVal = selectedCurrencySymbol,
+                        weekStart = selectedWeekStart,
+                        monthStart = selectedMonthStart,
+                        budgetEnabled = budgetModule,
+                        goalsEnabled = goalsModule,
+                        reportsEnabled = reportsModule,
+                        planningEnabled = planningModule,
+                        exportEnabled = exportModule
+                    )
+                }
+            }
+        }
+    }
 
     // Set default account name according to language
     LaunchedEffect(selectedLanguage) {
@@ -156,6 +198,30 @@ fun OnboardingWizardScreen(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                         )
+
+                        if (isOldAppInstalled) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Rilevata versione precedente!", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
+                                    Text("È stata trovata una versione precedente di Budgie sul dispositivo. Puoi importare direttamente i tuoi conti, transazioni reali e categorie caricando il file CSV esportato dalla vecchia app.", style = MaterialTheme.typography.bodySmall)
+                                    Button(
+                                        onClick = { csvPickerLauncher.launch("text/comma-separated-values") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                                    ) {
+                                        Text("Importa da Backup CSV")
+                                    }
+                                    if (importMessage != null) {
+                                        Text(importMessage!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
                         
                         Spacer(modifier = Modifier.height(24.dp))
                         
@@ -195,38 +261,28 @@ fun OnboardingWizardScreen(
                                                     onClick = { selectedLanguage = lang },
                                                     modifier = Modifier
                                                         .weight(1f)
-                                                        .height(50.dp)
-                                                        .testTag("lang_${lang.lowercase()}"),
+                                                        .height(50.dp),
                                                     colors = CardDefaults.outlinedCardColors(
-                                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent
+                                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
                                                     ),
                                                     border = BorderStroke(
                                                         width = if (isSelected) 2.dp else 1.dp,
                                                         color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                                                     )
                                                 ) {
-                                                    Box(
-                                                        modifier = Modifier.fillMaxSize(),
-                                                        contentAlignment = Alignment.Center
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .padding(horizontal = 12.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                     ) {
-                                                        Row(
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                        ) {
-                                                            if (lang == "Català") {
-                                                                Image(
-                                                                    painter = painterResource(id = R.drawable.img_flag_catalonia),
-                                                                    contentDescription = "Catalonia Flag",
-                                                                    modifier = Modifier
-                                                                        .size(22.dp)
-                                                                        .clip(RoundedCornerShape(3.dp)),
-                                                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                                                )
-                                                            } else {
-                                                                Text(flag, fontSize = 18.sp)
-                                                            }
-                                                            Text(lang, style = MaterialTheme.typography.bodyMedium, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
-                                                        }
+                                                        Text(flag, fontSize = 20.sp)
+                                                        Text(
+                                                            text = lang,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                                        )
                                                     }
                                                 }
                                             }
@@ -238,7 +294,7 @@ fun OnboardingWizardScreen(
                         
                         Spacer(modifier = Modifier.height(16.dp))
                         
-                        // Theme Select
+                        // Theme Selection Card
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp),
@@ -255,21 +311,18 @@ fun OnboardingWizardScreen(
                                 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    listOf("Chiaro", "Scuro").forEach { themeMode ->
-                                        val isSelected = selectedTheme == themeMode
-                                        val icon = if (themeMode == "Chiaro") Icons.Outlined.LightMode else Icons.Outlined.DarkMode
-                                        val label = if (themeMode == "Chiaro") "Chiaro".t(languageToUse) else "Scuro".t(languageToUse)
-                                        
+                                    val themes = listOf("Chiaro", "Scuro")
+                                    themes.forEach { tName ->
+                                        val isSelected = selectedTheme == tName
                                         OutlinedCard(
-                                            onClick = { selectedTheme = themeMode },
+                                            onClick = { selectedTheme = tName },
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .height(60.dp)
-                                                .testTag("theme_$themeMode"),
+                                                .height(50.dp),
                                             colors = CardDefaults.outlinedCardColors(
-                                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
                                             ),
                                             border = BorderStroke(
                                                 width = if (isSelected) 2.dp else 1.dp,
@@ -277,355 +330,48 @@ fun OnboardingWizardScreen(
                                             )
                                         ) {
                                             Row(
-                                                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                                                horizontalArrangement = Arrangement.Center,
-                                                verticalAlignment = Alignment.CenterVertically
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .padding(horizontal = 12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                Icon(icon, contentDescription = null, tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray)
-                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(if (tName == "Chiaro") "☀️" else "🌙", fontSize = 20.sp)
                                                 Text(
-                                                    text = label,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    1 -> {
-                        // FEATURES TO ENABLE (WITH EXPLANATIONS)
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Outlined.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Text(
-                            text = "Seleziona le funzioni da abilitare:".t(languageToUse),
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center
-                        )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Toggle module lists
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            val modules = listOf(
-                                Triple(
-                                    "Budget".t(languageToUse),
-                                    budgetModule,
-                                    if (selectedLanguage == "English") "Set custom spending limits for categories."
-                                    else if (selectedLanguage == "Español") "Establece límites de gastos para categorías."
-                                    else if (selectedLanguage == "Català") "Estableix límits de despeses per a categories."
-                                    else if (selectedLanguage == "Français") "Fixez des limites de dépenses pour les catégories."
-                                    else if (selectedLanguage == "Deutsch") "Legen Sie Ausgabenlimits für Kategorien fest."
-                                    else "Consente di impostare tetti di spesa per categoria."
-                                ) to { v: Boolean -> budgetModule = v },
-                                Triple(
-                                    "Obiettivi".t(languageToUse),
-                                    goalsModule,
-                                    if (selectedLanguage == "English") "Set savings targets with specific deadlines."
-                                    else if (selectedLanguage == "Español") "Establece metas de ahorro con plazos específicos."
-                                    else if (selectedLanguage == "Català") "Estableix objectius d'estalvi amb terminis concrets."
-                                    else if (selectedLanguage == "Français") "Fixez des objectifs d'épargne avec des échéances."
-                                    else if (selectedLanguage == "Deutsch") "Legen Sie Sparziele mit Fristen fest."
-                                    else "Ti aiuta a risparmiare denaro per obiettivi specifici."
-                                ) to { v: Boolean -> goalsModule = v },
-                                Triple(
-                                    "Statistiche".t(languageToUse),
-                                    reportsModule,
-                                    if (selectedLanguage == "English") "Visual reports and charts of your money flow."
-                                    else if (selectedLanguage == "Español") "Informes visuales y gráficos de tu flujo de dinero."
-                                    else if (selectedLanguage == "Català") "Informes visuals i gràfics del teu flux de diners."
-                                    else if (selectedLanguage == "Français") "Rapports visuels et graphiques de vos flux d'argent."
-                                    else if (selectedLanguage == "Deutsch") "Visuelle Berichte und Diagramme Ihres Geldflusses."
-                                    else "Grafici avanzati per analizzare distribuzioni e andamenti."
-                                ) to { v: Boolean -> reportsModule = v },
-                                Triple(
-                                    "Pianificazione".t(languageToUse),
-                                    planningModule,
-                                    if (selectedLanguage == "English") "Manage future and automatically recurring transactions."
-                                    else if (selectedLanguage == "Español") "Gestiona transacciones futuras y recurrentes automáticas."
-                                    else if (selectedLanguage == "Català") "Gestiona transaccions futures i recurrents automàtiques."
-                                    else if (selectedLanguage == "Français") "Gérez les transactions futures et récurrentes."
-                                    else if (selectedLanguage == "Deutsch") "Verwalten Sie zukünftige und wiederkehrende Buchungen."
-                                    else "Pianifica transazioni future o ricorrenti automatiche."
-                                ) to { v: Boolean -> planningModule = v },
-                                Triple(
-                                    "Export".t(languageToUse),
-                                    exportModule,
-                                    if (selectedLanguage == "English") "Export all data locally in CSV or JSON format."
-                                    else if (selectedLanguage == "Español") "Exporta todos tus datos localmente en CSV o JSON."
-                                    else if (selectedLanguage == "Català") "Exporta totes les teves dades localment en CSV o JSON."
-                                    else if (selectedLanguage == "Français") "Exporter toutes vos données localement en CSV ou JSON."
-                                    else if (selectedLanguage == "Deutsch") "Exportieren Sie Daten lokal im CSV- oder JSON-Format."
-                                    else "Consente di esportare i tuoi dati in locale per backup."
-                                ) to { v: Boolean -> exportModule = v }
-                            )
-                            
-                            modules.forEach { (moduleInfo, onToggle) ->
-                                val (title, isEnabled, desc) = moduleInfo
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                    ) {
-                                        Switch(
-                                            checked = isEnabled,
-                                            onCheckedChange = onToggle,
-                                            modifier = Modifier.testTag("module_switch_$title")
-                                        )
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(text = title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                            Text(text = desc, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    2 -> {
-                        // CALENDAR CONFIGURATION
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Outlined.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Text(
-                            text = "Configurazione Calendario".t(languageToUse),
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center
-                        )
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        // First day of week
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "Primo giorno della settimana".t(languageToUse),
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    modifier = Modifier.align(Alignment.Start)
-                                )
-                                
-                                val daysOfWeek = listOf(
-                                    "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"
-                                )
-                                
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    daysOfWeek.forEach { day ->
-                                        val isSelected = selectedWeekStart == day
-                                        val initial = when (day) {
-                                            "Lunedì" -> when (selectedLanguage) {
-                                                "English" -> "M"
-                                                "Español" -> "L"
-                                                "Català" -> "Dl"
-                                                "Français" -> "L"
-                                                "Deutsch" -> "M"
-                                                else -> "L"
-                                            }
-                                            "Martedì" -> when (selectedLanguage) {
-                                                "English" -> "T"
-                                                "Español" -> "M"
-                                                "Català" -> "Dt"
-                                                "Français" -> "M"
-                                                "Deutsch" -> "D"
-                                                else -> "M"
-                                            }
-                                            "Mercoledì" -> when (selectedLanguage) {
-                                                "English" -> "W"
-                                                "Español" -> "X"
-                                                "Català" -> "Dc"
-                                                "Français" -> "M"
-                                                "Deutsch" -> "M"
-                                                else -> "M"
-                                            }
-                                            "Giovedì" -> when (selectedLanguage) {
-                                                "English" -> "T"
-                                                "Español" -> "J"
-                                                "Català" -> "Dj"
-                                                "Français" -> "J"
-                                                "Deutsch" -> "D"
-                                                else -> "G"
-                                            }
-                                            "Venerdì" -> when (selectedLanguage) {
-                                                "English" -> "F"
-                                                "Español" -> "V"
-                                                "Català" -> "Dv"
-                                                "Français" -> "V"
-                                                "Deutsch" -> "F"
-                                                else -> "V"
-                                            }
-                                            "Sabato" -> when (selectedLanguage) {
-                                                "English" -> "S"
-                                                "Español" -> "S"
-                                                "Català" -> "Ds"
-                                                "Français" -> "S"
-                                                "Deutsch" -> "S"
-                                                else -> "S"
-                                            }
-                                            "Domenica" -> when (selectedLanguage) {
-                                                "English" -> "S"
-                                                "Español" -> "D"
-                                                "Català" -> "Dg"
-                                                "Français" -> "D"
-                                                "Deutsch" -> "S"
-                                                else -> "D"
-                                            }
-                                            else -> ""
-                                        }
-                                        
-                                        OutlinedCard(
-                                            onClick = { selectedWeekStart = day },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .aspectRatio(1f)
-                                                .testTag("week_start_$day"),
-                                            colors = CardDefaults.outlinedCardColors(
-                                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent
-                                            ),
-                                            border = BorderStroke(
-                                                width = if (isSelected) 2.dp else 1.dp,
-                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                                            ),
-                                            shape = CircleShape
-                                        ) {
-                                            Box(
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = initial,
+                                                    text = tName.t(languageToUse),
                                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    style = MaterialTheme.typography.bodyLarge,
                                                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                                 )
                                             }
                                         }
                                     }
                                 }
-                                
-                                val selectedDayLabel = when (selectedWeekStart) {
-                                    "Lunedì" -> {
-                                        if (selectedLanguage == "English") "Monday"
-                                        else if (selectedLanguage == "Español") "Lunes"
-                                        else if (selectedLanguage == "Català") "Dilluns"
-                                        else if (selectedLanguage == "Français") "Lundi"
-                                        else if (selectedLanguage == "Deutsch") "Montag"
-                                        else "Lunedì"
-                                    }
-                                    "Martedì" -> {
-                                        if (selectedLanguage == "English") "Tuesday"
-                                        else if (selectedLanguage == "Español") "Martes"
-                                        else if (selectedLanguage == "Català") "Dimarts"
-                                        else if (selectedLanguage == "Français") "Mardi"
-                                        else if (selectedLanguage == "Deutsch") "Dienstag"
-                                        else "Martedì"
-                                    }
-                                    "Mercoledì" -> {
-                                        if (selectedLanguage == "English") "Wednesday"
-                                        else if (selectedLanguage == "Español") "Miércoles"
-                                        else if (selectedLanguage == "Català") "Dimecres"
-                                        else if (selectedLanguage == "Français") "Mercredi"
-                                        else if (selectedLanguage == "Deutsch") "Mittwoch"
-                                        else "Mercoledì"
-                                    }
-                                    "Giovedì" -> {
-                                        if (selectedLanguage == "English") "Thursday"
-                                        else if (selectedLanguage == "Español") "Jueves"
-                                        else if (selectedLanguage == "Català") "Dijous"
-                                        else if (selectedLanguage == "Français") "Jeudi"
-                                        else if (selectedLanguage == "Deutsch") "Donnerstag"
-                                        else "Giovedì"
-                                    }
-                                    "Venerdì" -> {
-                                        if (selectedLanguage == "English") "Friday"
-                                        else if (selectedLanguage == "Español") "Viernes"
-                                        else if (selectedLanguage == "Català") "Divendres"
-                                        else if (selectedLanguage == "Français") "Vendredi"
-                                        else if (selectedLanguage == "Deutsch") "Freitag"
-                                        else "Venerdì"
-                                    }
-                                    "Sabato" -> {
-                                        if (selectedLanguage == "English") "Saturday"
-                                        else if (selectedLanguage == "Español") "Sábado"
-                                        else if (selectedLanguage == "Català") "Dissabte"
-                                        else if (selectedLanguage == "Français") "Samedi"
-                                        else if (selectedLanguage == "Deutsch") "Samstag"
-                                        else "Sabato"
-                                    }
-                                    "Domenica" -> {
-                                        if (selectedLanguage == "English") "Sunday"
-                                        else if (selectedLanguage == "Español") "Domingo"
-                                        else if (selectedLanguage == "Català") "Diumenge"
-                                        else if (selectedLanguage == "Français") "Dimanche"
-                                        else if (selectedLanguage == "Deutsch") "Sonntag"
-                                        else "Domenica"
-                                    }
-                                    else -> selectedWeekStart
-                                }
-                                
-                                val selectedDayPrefix = when (selectedLanguage) {
-                                    "English" -> "Selected"
-                                    "Español" -> "Seleccionado"
-                                    "Català" -> "Seleccionat"
-                                    "Français" -> "Sélectionné"
-                                    "Deutsch" -> "Ausgewählt"
-                                    else -> "Selezionato"
-                                }
-                                
-                                Text(
-                                    text = "$selectedDayPrefix: $selectedDayLabel",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
                             }
+                        }
+                    }
+                    1 -> {
+                        // CURRENCY & FORMAT
+                        Box(
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("💱", fontSize = 40.sp)
                         }
                         
                         Spacer(modifier = Modifier.height(16.dp))
                         
-                        // First day of month
+                        Text(
+                            text = "Valuta dell'applicazione:".t(languageToUse),
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp),
@@ -633,59 +379,130 @@ fun OnboardingWizardScreen(
                         ) {
                             Column(
                                 modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Mese Finanziario (Giorno Inizio)".t(languageToUse),
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                                    )
-                                    Text(
-                                        text = selectedMonthStart.toString(),
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        style = MaterialTheme.typography.titleLarge
-                                    )
+                                val currencies = listOf(
+                                    "EUR" to "€",
+                                    "USD" to "$",
+                                    "GBP" to "£",
+                                    "CHF" to "CHF",
+                                    "JPY" to "¥"
+                                )
+                                
+                                currencies.forEach { (code, symbol) ->
+                                    val isSelected = selectedCurrencyCode == code
+                                    OutlinedCard(
+                                        onClick = {
+                                            selectedCurrencyCode = code
+                                            selectedCurrencySymbol = symbol
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.outlinedCardColors(
+                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
+                                        ),
+                                        border = BorderStroke(
+                                            width = if (isSelected) 2.dp else 1.dp,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                        )
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                            ) {
+                                                Text(symbol, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                                                Column {
+                                                    Text(code, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                                    Text(
+                                                        text = when(code) {
+                                                            "EUR" -> "Euro"
+                                                            "USD" -> "US Dollar"
+                                                            "GBP" -> "British Pound"
+                                                            "CHF" -> "Swiss Franc"
+                                                            "JPY" -> "Japanese Yen"
+                                                            else -> code
+                                                        },
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = Color.Gray
+                                                    )
+                                                }
+                                            }
+                                            if (isSelected) {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                        }
+                                    }
                                 }
-                                
-                                Slider(
-                                    value = selectedMonthStart.toFloat(),
-                                    onValueChange = { selectedMonthStart = it.toInt() },
-                                    valueRange = 1f..31f,
-                                    steps = 30,
-                                    modifier = Modifier.testTag("month_start_slider")
-                                )
-                                
-                                Text(
-                                    text = "Il ciclo mensile terminerà automaticamente il giorno precedente a quello selezionato.".t(languageToUse),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.Gray
-                                )
                             }
                         }
                     }
-                    
+                    2 -> {
+                        // MODULES ENABLEMENT
+                        Box(
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🧩", fontSize = 40.sp)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Text(
+                            text = "Seleziona le funzioni da abilitare:".t(languageToUse),
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                WizardModuleToggle("Modulo Budget".t(languageToUse), "Monitora i limiti di spesa per categoria o totali".t(languageToUse), budgetModule) { budgetModule = it }
+                                Divider()
+                                WizardModuleToggle("Modulo Obiettivi".t(languageToUse), "Traccia i tuoi traguardi di risparmio e salvadanaio".t(languageToUse), goalsModule) { goalsModule = it }
+                                Divider()
+                                WizardModuleToggle("Modulo Report".t(languageToUse), "Analizza statistiche e distribuzioni di spesa".t(languageToUse), reportsModule) { reportsModule = it }
+                                Divider()
+                                WizardModuleToggle("Modulo Pianificazione".t(languageToUse), "Automatizza transazioni ricorrenti e future".t(languageToUse), planningModule) { planningModule = it }
+                                Divider()
+                                WizardModuleToggle("Modulo Esportazione".t(languageToUse), "Esporta report e dati contabili in CSV".t(languageToUse), exportModule) { exportModule = it }
+                            }
+                        }
+                    }
                     3 -> {
                         // FIRST ACCOUNT SETUP
                         Box(
                             modifier = Modifier
-                                .size(72.dp)
+                                .size(80.dp)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("🏦", fontSize = 36.sp)
+                            Text("💳", fontSize = 40.sp)
                         }
                         
                         Spacer(modifier = Modifier.height(16.dp))
                         
                         Text(
                             text = "Configura il tuo primo conto".t(languageToUse),
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.primary,
                             textAlign = TextAlign.Center
                         )
@@ -695,197 +512,7 @@ fun OnboardingWizardScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                        )
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        OutlinedTextField(
-                            value = accountName,
-                            onValueChange = { accountName = it },
-                            label = { Text("Nome del Conto".t(languageToUse)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth().testTag("account_name_input")
-                        )
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Valuta del Conto (Menu a tendina con Euro come primo suggerito)
-                        var expandedCurrencyDropdown by remember { mutableStateOf(false) }
-                        val currentSelectedCurrency = supportedCurrencies.find { it.code == selectedCurrencyCode } ?: supportedCurrencies.first()
-
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            OutlinedCard(
-                                onClick = { expandedCurrencyDropdown = true },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("account_currency_dropdown_trigger"),
-                                shape = RoundedCornerShape(4.dp),
-                                colors = CardDefaults.outlinedCardColors(
-                                    containerColor = Color.Transparent
-                                ),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = "Valuta del Conto:".t(languageToUse),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Text(currentSelectedCurrency.flag, fontSize = 18.sp)
-                                            Text(
-                                                text = "${currentSelectedCurrency.symbol} - ${currentSelectedCurrency.name} (${currentSelectedCurrency.code})",
-                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                    }
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowDropDown,
-                                        contentDescription = "Dropdown",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            DropdownMenu(
-                                expanded = expandedCurrencyDropdown,
-                                onDismissRequest = { expandedCurrencyDropdown = false },
-                                modifier = Modifier
-                                    .fillMaxWidth(0.9f)
-                                    .heightIn(max = 300.dp)
-                            ) {
-                                supportedCurrencies.forEachIndexed { index, curr ->
-                                    val isSelected = selectedCurrencyCode == curr.code
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text(curr.flag, fontSize = 18.sp)
-                                                Text(
-                                                    text = if (index == 0) "${curr.symbol} - ${curr.name} (${curr.code}) ★" else "${curr.symbol} - ${curr.name} (${curr.code})",
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
-                                        },
-                                        onClick = {
-                                            selectedCurrencyCode = curr.code
-                                            selectedCurrencySymbol = curr.symbol
-                                            expandedCurrencyDropdown = false
-                                        },
-                                        modifier = Modifier.testTag("currency_option_${curr.code.lowercase()}")
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        OutlinedTextField(
-                            value = accountBalanceStr,
-                            onValueChange = { accountBalanceStr = it },
-                            label = { Text("${"Saldo Iniziale".t(languageToUse)} ($selectedCurrencySymbol)") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth().testTag("account_balance_input")
-                        )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Text(
-                            text = "Tipologia Conto:".t(languageToUse),
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            modifier = Modifier.align(Alignment.Start)
-                        )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf(
-                                Triple("Bank", "🏦", "Conto"),
-                                Triple("Cash", "💵", "Contanti"),
-                                Triple("Card", "💳", "Carta")
-                            ).forEach { (type, emoji, label) ->
-                                val isSelected = accountType == type
-                                OutlinedCard(
-                                    onClick = { accountType = type },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(72.dp)
-                                        .testTag("account_type_$type"),
-                                    colors = CardDefaults.outlinedCardColors(
-                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent
-                                    ),
-                                    border = BorderStroke(
-                                        width = if (isSelected) 2.dp else 1.dp,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                                    )
-                                ) {
-                                    Column(
-                                        modifier = Modifier.fillMaxSize(),
-                                        verticalArrangement = Arrangement.Center,
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Text(emoji, fontSize = 24.sp)
-                                        Text(
-                                            text = label.t(languageToUse),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    4 -> {
-                        // SUMMARY AND COMPLETION
-                        Box(
-                            modifier = Modifier
-                                .size(100.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("🚀", fontSize = 56.sp)
-                        }
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        Text(
-                            text = "Tutto pronto!".t(languageToUse),
-                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center
-                        )
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        Text(
-                            text = "Configurazione completata con successo. Sei pronto a prendere il controllo delle tue finanze personali con Budgie!".t(languageToUse),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 8.dp)
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                         )
                         
                         Spacer(modifier = Modifier.height(24.dp))
@@ -893,79 +520,190 @@ fun OnboardingWizardScreen(
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
                         ) {
-                            Row(
+                            Column(
                                 modifier = Modifier.padding(16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                              ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape),
-                                    contentAlignment = Alignment.Center
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = accountName,
+                                    onValueChange = { accountName = it },
+                                    label = { Text("Nome del Conto".t(languageToUse)) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                
+                                OutlinedTextField(
+                                    value = accountBalanceStr,
+                                    onValueChange = { accountBalanceStr = it },
+                                    label = { Text("Saldo Iniziale (€)".t(languageToUse)) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                
+                                Text(text = "Tipologia Conto:".t(languageToUse), style = MaterialTheme.typography.labelLarge)
+                                
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Security,
-                                        contentDescription = "Security",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(24.dp)
+                                    val types = listOf(
+                                        "Bank" to "Conto".t(languageToUse),
+                                        "Cash" to "Contanti".t(languageToUse),
+                                        "Card" to "Carta".t(languageToUse)
                                     )
+                                    types.forEach { (typeKey, typeLabel) ->
+                                        val isSelected = accountType == typeKey
+                                        OutlinedCard(
+                                            onClick = { accountType = typeKey },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(45.dp),
+                                            colors = CardDefaults.outlinedCardColors(
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
+                                            ),
+                                            border = BorderStroke(
+                                                width = if (isSelected) 2.dp else 1.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                            )
+                                        ) {
+                                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = typeLabel,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "La tua privacy è sacra".t(languageToUse),
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                                    )
-                                    Text(
-                                        text = "Tutti i tuoi dati sono salvati esclusivamente in locale sul tuo telefono e non vengono mai trasmessi a server esterni.".t(languageToUse),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                            }
+                        }
+                    }
+                    4 -> {
+                        // CALENDAR & FINAL STEP
+                        Box(
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🗓️", fontSize = 40.sp)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Text(
+                            text = "Configurazione Calendario".t(languageToUse),
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Text(
+                                    text = "Primo giorno della settimana".t(languageToUse),
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                                
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val days = listOf("Lunedì", "Domenica", "Sabato")
+                                    days.forEach { day ->
+                                        val isSelected = selectedWeekStart == day
+                                        OutlinedCard(
+                                            onClick = { selectedWeekStart = day },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(45.dp),
+                                            colors = CardDefaults.outlinedCardColors(
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
+                                            ),
+                                            border = BorderStroke(
+                                                width = if (isSelected) 2.dp else 1.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                            )
+                                        ) {
+                                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = day.t(languageToUse),
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
+                                
+                                Divider()
+                                
+                                Text(
+                                    text = "Mese Finanziario (Giorno Inizio)".t(languageToUse),
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                                
+                                OutlinedTextField(
+                                    value = selectedMonthStart.toString(),
+                                    onValueChange = { selectedMonthStart = it.toIntOrNull()?.coerceIn(1, 28) ?: 1 },
+                                    label = { Text("Giorno d'inizio:".t(languageToUse)) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // Bottom Navigation Buttons
+            // Bottom Navigation / Action Buttons
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 24.dp),
+                    .padding(top = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (currentStep > 0) {
                     OutlinedButton(
                         onClick = { currentStep-- },
-                        modifier = Modifier
-                            .height(50.dp)
-                            .weight(1f)
-                            .padding(end = 8.dp)
-                            .testTag("wizard_prev_button")
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.height(48.dp)
                     ) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text("Indietro".t(languageToUse))
                     }
+                } else {
+                    Spacer(modifier = Modifier.width(1.dp))
                 }
-                
+
                 Button(
                     onClick = {
                         if (currentStep < 4) {
-                            // Validation
-                            if (currentStep == 3) {
-                                if (accountName.isBlank()) {
-                                    return@Button
-                                }
-                            }
                             currentStep++
                         } else {
-                            val bal = accountBalanceStr.replace(',', '.').toDoubleOrNull() ?: 0.0
+                            val initialBal = accountBalanceStr.replace(',', '.').toDoubleOrNull() ?: 0.0
                             viewModel.completeOnboarding(
-                                firstAccountName = accountName,
-                                firstAccountBalance = bal,
+                                firstAccountName = accountName.ifBlank { "Conto Principale" },
+                                firstAccountBalance = initialBal,
                                 firstAccountType = accountType,
                                 language = selectedLanguage,
                                 theme = selectedTheme,
@@ -981,22 +719,37 @@ fun OnboardingWizardScreen(
                             )
                         }
                     },
-                    modifier = Modifier
-                        .height(50.dp)
-                        .weight(1f)
-                        .padding(start = if (currentStep > 0) 8.dp else 0.dp)
-                        .testTag("wizard_next_button"),
-                    enabled = currentStep != 3 || accountName.isNotBlank()
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.height(48.dp).weight(1f).padding(start = if (currentStep > 0) 12.dp else 0.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text(
-                        if (currentStep == 4) {
-                            "Entra in Budgie".t(languageToUse)
-                        } else {
-                            "Avanti".t(languageToUse)
-                        }
-                    )
+                    Text(if (currentStep < 4) "Avanti".t(languageToUse) else "Entra in Budgie".t(languageToUse))
+                    if (currentStep < 4) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = null)
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun WizardModuleToggle(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

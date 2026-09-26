@@ -2,7 +2,9 @@ package com.example.ui
 
 import android.app.Application
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -11,6 +13,8 @@ import com.example.data.*
 import java.util.Calendar
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -1373,6 +1377,163 @@ class WalletViewModel(application: Application, private val repository: BudgieRe
             }
             else -> 0L // Custom or infinity
         }
+    }
+
+    fun importDataFromCSV(context: Context, uri: Uri, onComplete: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val reader = BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8))
+                val lines = reader.readLines()
+                reader.close()
+
+                if (lines.isEmpty()) {
+                    onComplete(false, "Il file CSV è vuoto.")
+                    return@launch
+                }
+
+                val dataLines = lines.drop(1)
+                var importedCount = 0
+
+                val existingAccounts = accounts.value.toMutableList()
+                val existingCategories = categories.value.toMutableList()
+
+                dataLines.forEach { line ->
+                    val tokens = parseCSVLine(line)
+                    if (tokens.size >= 8) {
+                        val dateStr = tokens[0].trim()
+                        val typeStr = tokens[1].trim()
+                        val amount = tokens[2].replace(',', '.').toDoubleOrNull() ?: 0.0
+                        val title = tokens[3].trim()
+                        val catName = tokens[4].trim()
+                        val subCatName = tokens[5].trim()
+                        val sourceAccName = tokens[6].trim()
+                        val destAccName = tokens[7].trim()
+
+                        if (typeStr.contains("Virtual", true) || 
+                            title.contains("Accantonamento", true) || 
+                            title.contains("Svincolo", true) ||
+                            title.contains("Rilascio da obiettivi", true)) {
+                            return@forEach
+                        }
+
+                        var sourceAcc = existingAccounts.find { it.name.equals(sourceAccName, true) }
+                        if (sourceAcc == null && sourceAccName.isNotBlank()) {
+                            val newAccId = repository.insertAccount(Account(name = sourceAccName, type = "Conto Corrente", balance = 0.0)).toInt()
+                            sourceAcc = Account(id = newAccId, name = sourceAccName, type = "Conto Corrente", balance = 0.0)
+                            existingAccounts.add(sourceAcc)
+                        }
+                        val sourceAccId = sourceAcc?.id ?: existingAccounts.firstOrNull()?.id ?: run {
+                            repository.insertAccount(Account(name = "Conto Principale", type = "Conto Corrente", balance = 0.0)).toInt()
+                        }
+
+                        var destAccId: Int? = null
+                        if (typeStr.equals("Transfer", true) && destAccName.isNotBlank()) {
+                            var destAcc = existingAccounts.find { it.name.equals(destAccName, true) }
+                            if (destAcc == null) {
+                                val newDestId = repository.insertAccount(Account(name = destAccName, type = "Conto Corrente", balance = 0.0)).toInt()
+                                destAcc = Account(id = newDestId, name = destAccName, type = "Conto Corrente", balance = 0.0)
+                                existingAccounts.add(destAcc)
+                            }
+                            destAccId = destAcc?.id
+                        }
+
+                        var catId: Int? = null
+                        if (catName.isNotBlank()) {
+                            var parentCat = existingCategories.find { it.parentCategoryId == null && it.name.equals(catName, true) }
+                            if (parentCat == null) {
+                                val newParentId = repository.insertCategory(Category(name = catName, iconEmoji = "📁", type = "Expense")).toInt()
+                                parentCat = Category(id = newParentId, name = catName, iconEmoji = "📁", type = "Expense")
+                                existingCategories.add(parentCat)
+                            }
+
+                            if (subCatName.isNotBlank()) {
+                                var subCat = existingCategories.find { it.parentCategoryId == parentCat.id && it.name.equals(subCatName, true) }
+                                if (subCat == null) {
+                                    val newSubId = repository.insertCategory(Category(name = subCatName, iconEmoji = "📂", parentCategoryId = parentCat.id, type = parentCat.type)).toInt()
+                                    subCat = Category(id = newSubId, name = subCatName, iconEmoji = "📂", parentCategoryId = parentCat.id, type = parentCat.type)
+                                    existingCategories.add(subCat)
+                                }
+                                catId = subCat.id
+                            } else {
+                                catId = parentCat.id
+                            }
+                        }
+
+                        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ITALIAN)
+                        val timestamp = try {
+                            sdf.parse(dateStr)?.time ?: System.currentTimeMillis()
+                        } catch (_: Exception) {
+                            System.currentTimeMillis()
+                        }
+
+                        val txType = when {
+                            typeStr.equals("Income", true) || typeStr.equals("Ingreso", true) || typeStr.equals("Ingrés", true) || typeStr.equals("Revenu", true) || typeStr.equals("Einnahme", true) -> "Income"
+                            typeStr.equals("Transfer", true) || typeStr.equals("Transferencia", true) || typeStr.equals("Transferència", true) || typeStr.equals("Transfert", true) || typeStr.equals("Überweisung", true) -> "Transfer"
+                            else -> "Expense"
+                        }
+
+                        repository.insertTransaction(
+                            Transaction(
+                                title = title.ifBlank { "Transazione" },
+                                amount = amount,
+                                type = txType,
+                                timestamp = timestamp,
+                                categoryId = catId,
+                                sourceAccountId = sourceAccId,
+                                destinationAccountId = destAccId
+                            )
+                        )
+
+                        val srcAccObj = existingAccounts.find { it.id == sourceAccId }
+                        if (srcAccObj != null) {
+                            val newBal = when (txType) {
+                                "Income" -> srcAccObj.balance + amount
+                                "Expense" -> srcAccObj.balance - amount
+                                "Transfer" -> srcAccObj.balance - amount
+                                else -> srcAccObj.balance
+                            }
+                            val updatedSrc = srcAccObj.copy(balance = newBal)
+                            repository.updateAccount(updatedSrc)
+                            existingAccounts.replaceAll { if (it.id == updatedSrc.id) updatedSrc else it }
+                        }
+
+                        if (txType == "Transfer" && destAccId != null) {
+                            val destAccObj = existingAccounts.find { it.id == destAccId }
+                            if (destAccObj != null) {
+                                val updatedDest = destAccObj.copy(balance = destAccObj.balance + amount)
+                                repository.updateAccount(updatedDest)
+                                existingAccounts.replaceAll { if (it.id == updatedDest.id) updatedDest else it }
+                            }
+                        }
+
+                        importedCount++
+                    }
+                }
+
+                onComplete(true, "Importate $importedCount transazioni con successo!")
+            } catch (e: Exception) {
+                onComplete(false, "Errore durante l'importazione: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    private fun parseCSVLine(line: String): List<String> {
+        val result = mutableListOf<String>()
+        val sb = StringBuilder()
+        var inQuotes = false
+        for (c in line) {
+            when {
+                c == '"' -> inQuotes = !inQuotes
+                c == ',' && !inQuotes -> {
+                    result.add(sb.toString().trim('"'))
+                    sb.clear()
+                }
+                else -> sb.append(c)
+            }
+        }
+        result.add(sb.toString().trim('"'))
+        return result
     }
 
     // --- VIEWMODEL PROVIDER FACTORY ---
